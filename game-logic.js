@@ -103,6 +103,7 @@ class Game {
     this.moveHistory = [];
     this.chainActive = null;
     this.lastJumpedOver = null;  // Track last jumped-over position to prevent back-and-forth
+    this.cornerForced = null;  // Position of marble forced to leave corner (set after jumping into corner)
     this._setupBoard();
   }
 
@@ -139,15 +140,8 @@ class Game {
     const moves = [];
     const player = this.currentPlayer;
 
-    // Check if any own marble is stuck in a corner — must move it first!
-    let forcedCornerMarble = null;
-    for (const corner of CORNERS) {
-      const cell = this.board[corner];
-      if (cell && cell.player === player) {
-        forcedCornerMarble = corner;
-        break;
-      }
-    }
+    // If a marble was forced into a corner last turn, it must move out first
+    const forcedCornerMarble = this.cornerForced;
 
     for (let i = 0; i < BOARD_SIZE; i++) {
       const cell = this.board[i];
@@ -242,7 +236,7 @@ class Game {
         } else {
           this.chainActive = null;
           this.lastJumpedOver = null;
-          this.currentPlayer = (this.currentPlayer + 1) % this.numPlayers;
+          this._advanceTurn(to);
           return { valid: true, captures: move.captures, chainActive: null };
         }
       }
@@ -281,18 +275,34 @@ class Game {
       }
       this.chainActive = null;
       this.lastJumpedOver = null;
-      this.currentPlayer = (this.currentPlayer + 1) % this.numPlayers;
+      this._advanceTurn(to);
     }
 
     return { valid: true, captures: move.captures, chainActive: null };
   }
 
+  _advanceTurn(lastTo) {
+    // Set cornerForced if marble ended in a corner
+    if (CORNERS.includes(lastTo)) {
+      // Next player's turn, but the CURRENT player's marble is forced
+      // Actually: the marble in corner belongs to current player, next turn they must move it
+      // We need to track it for when this player's turn comes again... 
+      // Wait - the rule is simpler: if YOU jump into a corner, YOUR NEXT TURN you must move it out
+      // So we store which corner has a forced marble, checked when that player plays
+      this.cornerForced = lastTo;
+    } else {
+      this.cornerForced = null;
+    }
+    this.currentPlayer = (this.currentPlayer + 1) % this.numPlayers;
+  }
+
   endTurn() {
     if (this.chainActive === null || this.chainActive === undefined) return false;
+    const lastPos = this.chainActive;
     this.chainActive = null;
     this.lastJumpedOver = null;
     if (!this.gameOver) {
-      this.currentPlayer = (this.currentPlayer + 1) % this.numPlayers;
+      this._advanceTurn(lastPos);
     }
     return true;
   }
