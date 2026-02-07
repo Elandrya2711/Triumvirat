@@ -599,7 +599,10 @@ function tryReconnect() {
 
 // Socket events
 // Try reconnect on socket connection
-socket.on('connect', () => { tryReconnect(); });
+socket.on('connect', () => {
+  console.log('Socket connected, trying reconnect...');
+  tryReconnect();
+});
 
 socket.on('game-created', (data) => {
   gameId = data.gameId;

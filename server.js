@@ -245,6 +245,25 @@ io.on('connection', (socket) => {
       return;
     }
     
+    // Spectator reconnect
+    if (playerIndex === -1 && room.spectateMode) {
+      socket.join(gameId);
+      socket.gameId = gameId;
+      socket.playerIndex = -1;
+      socket.emit('reconnected', {
+        gameId,
+        playerIndex: -1,
+        numPlayers: room.numPlayers,
+        boardLayout: getBoardLayout(),
+        adjacency: ADJACENCY,
+        colors: PLAYER_COLORS,
+        playerNames: PLAYER_NAMES,
+        state: room.game.getState()
+      });
+      console.log(`Spectator reconnected to game ${gameId}`);
+      return;
+    }
+
     // Update the player's socket ID
     const player = room.players.find(p => p.index === playerIndex && !p.id.startsWith('ai-'));
     if (!player) {
@@ -254,6 +273,7 @@ io.on('connection', (socket) => {
     
     player.id = socket.id;
     player.name = playerName || player.name;
+    player.disconnected = false;
     socket.join(gameId);
     socket.gameId = gameId;
     socket.playerIndex = playerIndex;
@@ -325,11 +345,15 @@ io.on('connection', (socket) => {
         io.to(socket.gameId).emit('player-disconnected', {
           playerIndex: socket.playerIndex
         });
-        // Clean up empty games
-        room.players = room.players.filter(p => p.id !== socket.id);
-        if (room.players.length === 0) {
+        // Mark player as disconnected but keep in list for reconnect
+        const player = room.players.find(p => p.id === socket.id);
+        if (player) player.disconnected = true;
+        // Only delete game if ALL human players are disconnected and game is over
+        const humanPlayers = room.players.filter(p => !p.id.startsWith('ai-'));
+        const allDisconnected = humanPlayers.every(p => p.disconnected);
+        if (allDisconnected && room.game.gameOver) {
           games.delete(socket.gameId);
-          console.log(`Game ${socket.gameId} deleted (empty)`);
+          console.log(`Game ${socket.gameId} deleted (all disconnected + game over)`);
         }
       }
     }
