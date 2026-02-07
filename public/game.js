@@ -37,12 +37,8 @@ function registerSocketEvent(event, handler) {
   gameEventListeners.push({ event, handler });
 }
 
-// Issue #4 & #12: Cleanup function for game events and state
+// Issue #4 & #12: Reset game state (keep socket listeners — they're global)
 function cleanupGameEvents() {
-  for (const { event, handler } of gameEventListeners) {
-    socket.off(event, handler);
-  }
-  gameEventListeners = [];
   animQueue = [];
   animLock = false;
   moveTrails = {}; // Issue #12: Clear trails

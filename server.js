@@ -397,9 +397,11 @@ io.on('connection', (socket) => {
     }
     
     console.log(`Player ${surrenderedPlayer} surrendered in game ${socket.gameId}`);
-    socket.leave(socket.gameId);
+    const oldGameId = socket.gameId;
     socket.gameId = null;
     socket.playerIndex = null;
+    // Leave room AFTER emitting so client gets the events
+    process.nextTick(() => socket.leave(oldGameId));
   });
 
   // Leave game (spectator or player wanting to quit without surrender)
