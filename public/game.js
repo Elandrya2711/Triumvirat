@@ -130,21 +130,59 @@ function render() {
 }
 
 function drawBoard(w, h) {
-  // Subtle triangle background
   if (posCoords.length < 28) return;
+  
+  const p0 = posCoords[0], p21 = posCoords[21], p27 = posCoords[27];
+  const margin = 35;
+  
+  // Wood board shape (triangle with rounded feel)
   ctx.beginPath();
-  ctx.moveTo(posCoords[0].x, posCoords[0].y - 30);
-  ctx.lineTo(posCoords[21].x - 30, posCoords[21].y + 20);
-  ctx.lineTo(posCoords[27].x + 30, posCoords[27].y + 20);
+  ctx.moveTo(p0.x, p0.y - margin);
+  ctx.lineTo(p21.x - margin, p21.y + margin * 0.7);
+  ctx.lineTo(p27.x + margin, p27.y + margin * 0.7);
   ctx.closePath();
-  ctx.fillStyle = 'rgba(15, 52, 96, 0.3)';
+  
+  // Wood base color
+  const woodGrad = ctx.createLinearGradient(0, p0.y - margin, 0, p21.y + margin);
+  woodGrad.addColorStop(0, '#6d4c30');
+  woodGrad.addColorStop(0.3, '#7a5636');
+  woodGrad.addColorStop(0.6, '#6d4c30');
+  woodGrad.addColorStop(1, '#5a3d25');
+  ctx.fillStyle = woodGrad;
   ctx.fill();
+  
+  // Wood grain lines
+  ctx.save();
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(90,55,30,0.3)';
+  ctx.lineWidth = 1;
+  for (let y = p0.y - margin; y < p21.y + margin; y += 8) {
+    ctx.beginPath();
+    ctx.moveTo(p21.x - margin - 10, y + Math.sin(y * 0.05) * 3);
+    ctx.bezierCurveTo(
+      w * 0.3, y + Math.sin(y * 0.08) * 5,
+      w * 0.7, y + Math.cos(y * 0.06) * 4,
+      p27.x + margin + 10, y + Math.sin(y * 0.07) * 3
+    );
+    ctx.stroke();
+  }
+  ctx.restore();
+  
+  // Board border (carved edge)
+  ctx.beginPath();
+  ctx.moveTo(p0.x, p0.y - margin);
+  ctx.lineTo(p21.x - margin, p21.y + margin * 0.7);
+  ctx.lineTo(p27.x + margin, p27.y + margin * 0.7);
+  ctx.closePath();
+  ctx.strokeStyle = '#3e2518';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(160,120,80,0.3)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
 }
 
 function drawConnections() {
-  ctx.strokeStyle = 'rgba(100, 120, 160, 0.3)';
-  ctx.lineWidth = 2;
-  
   if (!adjacency.length) return;
   
   const drawn = new Set();
@@ -154,9 +192,20 @@ function drawConnections() {
       if (drawn.has(key)) continue;
       drawn.add(key);
       
+      // Carved groove effect
       ctx.beginPath();
       ctx.moveTo(posCoords[i].x, posCoords[i].y);
       ctx.lineTo(posCoords[j].x, posCoords[j].y);
+      ctx.strokeStyle = 'rgba(30,18,10,0.4)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      
+      // Light edge (highlight)
+      ctx.beginPath();
+      ctx.moveTo(posCoords[i].x + 1, posCoords[i].y + 1);
+      ctx.lineTo(posCoords[j].x + 1, posCoords[j].y + 1);
+      ctx.strokeStyle = 'rgba(160,120,80,0.2)';
+      ctx.lineWidth = 1;
       ctx.stroke();
     }
   }
@@ -172,34 +221,24 @@ function drawMoveTrails() {
       const to = posCoords[seg.to];
       if (!from || !to) continue;
       
-      // Glowing line
+      // Subtle scratched trail on wood
       ctx.beginPath();
       ctx.moveTo(from.x, from.y);
       ctx.lineTo(to.x, to.y);
       ctx.strokeStyle = color;
-      ctx.lineWidth = 4;
-      ctx.globalAlpha = 0.4;
-      ctx.stroke();
-      
-      // Brighter center line
-      ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.lineTo(to.x, to.y);
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 3;
       ctx.globalAlpha = 0.3;
       ctx.stroke();
-      
       ctx.globalAlpha = 1.0;
     }
     
-    // Dot at start of trail
+    // Small dot at trail start
     const startPos = posCoords[trail.segments[0].from];
     if (startPos) {
       ctx.beginPath();
-      ctx.arc(startPos.x, startPos.y, 5, 0, Math.PI * 2);
+      ctx.arc(startPos.x, startPos.y, 4, 0, Math.PI * 2);
       ctx.fillStyle = color;
-      ctx.globalAlpha = 0.5;
+      ctx.globalAlpha = 0.4;
       ctx.fill();
       ctx.globalAlpha = 1.0;
     }
@@ -207,32 +246,109 @@ function drawMoveTrails() {
 }
 
 function drawHighlights() {
-  // Selected position
+  // Selected position — golden glow
   if (selectedPos !== null && posCoords[selectedPos]) {
     const p = posCoords[selectedPos];
+    const glow = ctx.createRadialGradient(p.x, p.y, 5, p.x, p.y, 30);
+    glow.addColorStop(0, 'rgba(212,160,23,0.4)');
+    glow.addColorStop(1, 'rgba(212,160,23,0)');
     ctx.beginPath();
     ctx.arc(p.x, p.y, 30, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(233, 69, 96, 0.25)';
+    ctx.fillStyle = glow;
     ctx.fill();
-    ctx.strokeStyle = '#e94560';
+    ctx.strokeStyle = '#d4a017';
     ctx.lineWidth = 2;
     ctx.stroke();
   }
   
-  // Valid targets
+  // Valid targets — subtle green glow
   for (const t of validTargets) {
     const p = posCoords[t];
     if (!p) continue;
+    const glow = ctx.createRadialGradient(p.x, p.y, 3, p.x, p.y, 22);
+    glow.addColorStop(0, 'rgba(39,174,96,0.35)');
+    glow.addColorStop(1, 'rgba(39,174,96,0)');
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 26, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(46, 204, 113, 0.3)';
+    ctx.arc(p.x, p.y, 22, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
     ctx.fill();
-    ctx.strokeStyle = '#2ecc71';
+    ctx.strokeStyle = 'rgba(39,174,96,0.6)';
     ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
+    ctx.setLineDash([4, 4]);
     ctx.stroke();
     ctx.setLineDash([]);
   }
+}
+
+function drawMarble(x, y, radius, color, selected) {
+  // Shadow in the hollow
+  ctx.beginPath();
+  ctx.arc(x + 2, y + 3, radius + 2, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fill();
+  
+  // Glass marble body — multi-stop gradient for depth
+  const grad = ctx.createRadialGradient(x - radius * 0.35, y - radius * 0.35, radius * 0.05, x, y, radius);
+  grad.addColorStop(0, lightenColor(color, 80));
+  grad.addColorStop(0.25, lightenColor(color, 30));
+  grad.addColorStop(0.6, color);
+  grad.addColorStop(0.85, darkenColor(color, 25));
+  grad.addColorStop(1, darkenColor(color, 50));
+  
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  
+  // Glass rim
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(255,255,255,0.15)`;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  
+  // Primary shine (top-left)
+  ctx.beginPath();
+  ctx.arc(x - radius * 0.3, y - radius * 0.3, radius * 0.35, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.fill();
+  
+  // Secondary small shine (bottom-right reflection)
+  ctx.beginPath();
+  ctx.arc(x + radius * 0.2, y + radius * 0.25, radius * 0.12, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.fill();
+  
+  // Selection ring — golden glow
+  if (selected) {
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 5, 0, Math.PI * 2);
+    ctx.strokeStyle = '#d4a017';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#d4a017';
+    ctx.shadowBlur = 10;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+}
+
+function drawHollow(x, y) {
+  // Carved hollow in wood
+  const hollowGrad = ctx.createRadialGradient(x, y, 2, x, y, 12);
+  hollowGrad.addColorStop(0, 'rgba(30,18,10,0.5)');
+  hollowGrad.addColorStop(0.7, 'rgba(40,25,15,0.3)');
+  hollowGrad.addColorStop(1, 'rgba(80,55,35,0.1)');
+  ctx.beginPath();
+  ctx.arc(x, y, 12, 0, Math.PI * 2);
+  ctx.fillStyle = hollowGrad;
+  ctx.fill();
+  
+  // Subtle rim highlight
+  ctx.beginPath();
+  ctx.arc(x, y, 11, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(120,85,55,0.3)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
 }
 
 function drawMarbles() {
@@ -243,52 +359,18 @@ function drawMarbles() {
     const p = posCoords[i];
     if (!p) continue;
     
-    // Skip marble at destination during animation (it will be drawn by animating function)
     if (animationData && i === animationData.toPos) continue;
     
     if (!cell) {
-      // Empty slot
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(100, 120, 160, 0.4)';
-      ctx.fill();
+      drawHollow(p.x, p.y);
       continue;
     }
     
     const radius = MARBLE_SIZES[cell.size] || 16;
     const color = colors[cell.player] || '#888';
+    const isSelected = gameState.currentPlayer === myPlayerIndex && cell.player === myPlayerIndex && selectedPos === i;
     
-    // Shadow
-    ctx.beginPath();
-    ctx.arc(p.x + 2, p.y + 2, radius, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.fill();
-    
-    // Marble body
-    const grad = ctx.createRadialGradient(p.x - radius * 0.3, p.y - radius * 0.3, radius * 0.1, p.x, p.y, radius);
-    grad.addColorStop(0, lightenColor(color, 40));
-    grad.addColorStop(0.7, color);
-    grad.addColorStop(1, darkenColor(color, 30));
-    
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = grad;
-    ctx.fill();
-    
-    // Shine
-    ctx.beginPath();
-    ctx.arc(p.x - radius * 0.25, p.y - radius * 0.25, radius * 0.3, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.3)';
-    ctx.fill();
-    
-    // Selection ring for own marbles when it's our turn
-    if (gameState.currentPlayer === myPlayerIndex && cell.player === myPlayerIndex && selectedPos === i) {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, radius + 4, 0, Math.PI * 2);
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 3;
-      ctx.stroke();
-    }
+    drawMarble(p.x, p.y, radius, color, isSelected);
   }
 }
 
@@ -304,33 +386,12 @@ function drawAnimatingMarble() {
   const radius = MARBLE_SIZES[marble.size] || 16;
   const color = colors[marble.player] || '#888';
   
-  // Shadow
-  ctx.beginPath();
-  ctx.arc(x + 2, y + 2, radius, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0,0,0,0.3)';
-  ctx.fill();
+  drawMarble(x, y, radius, color, false);
   
-  // Marble body
-  const grad = ctx.createRadialGradient(x - radius * 0.3, y - radius * 0.3, radius * 0.1, x, y, radius);
-  grad.addColorStop(0, lightenColor(color, 40));
-  grad.addColorStop(0.7, color);
-  grad.addColorStop(1, darkenColor(color, 30));
-  
+  // Golden glow trail while moving
   ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = grad;
-  ctx.fill();
-  
-  // Shine
-  ctx.beginPath();
-  ctx.arc(x - radius * 0.25, y - radius * 0.25, radius * 0.3, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255,255,255,0.3)';
-  ctx.fill();
-  
-  // Glow trail
-  ctx.beginPath();
-  ctx.arc(x, y, radius + 5, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(255, 255, 100, ${0.4 * (1 - t)})`;
+  ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(212, 160, 23, ${0.5 * (1 - t)})`;
   ctx.lineWidth = 2;
   ctx.stroke();
 }
