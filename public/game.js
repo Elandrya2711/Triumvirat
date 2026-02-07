@@ -1362,6 +1362,46 @@ function soloTriggerAI() {
     return;
   }
   
+  // Check if AI should surrender: its largest marble < smallest enemy marble → can never capture
+  const aiMarbles = soloGame.board.filter(c => c && c.player === currentPlayer);
+  const enemyMarbles = soloGame.board.filter(c => c && c.player !== currentPlayer);
+  if (aiMarbles.length > 0 && enemyMarbles.length > 0) {
+    const aiMaxSize = Math.max(...aiMarbles.map(m => m.size));
+    const enemyMinSize = Math.min(...enemyMarbles.map(m => m.size));
+    if (aiMaxSize < enemyMinSize) {
+      // AI surrenders — remove all its marbles (same as server surrender logic)
+      for (let i = 0; i < soloGame.board.length; i++) {
+        if (soloGame.board[i] && soloGame.board[i].player === currentPlayer) {
+          soloGame.board[i] = null;
+        }
+      }
+      if (soloGame.playerMarbles) soloGame.playerMarbles[currentPlayer] = [];
+      soloGame._checkGameEnd();
+      
+      if (!soloGame.gameOver) {
+        // Advance to next non-eliminated player
+        soloGame.chainActive = null;
+        soloGame.lastJumpedOver = null;
+        soloGame.currentPlayer = (soloGame.currentPlayer + 1) % soloGame.numPlayers;
+        soloGame._skipEliminatedPlayers();
+        soloGame._checkGameEnd();
+      }
+      
+      gameState = soloGame.getState();
+      showToast(`${aiConf.name} gibt auf — keine Chance mehr! 🏳️`);
+      render();
+      updateTurnDisplay();
+      
+      if (soloGame.gameOver) {
+        soloShowGameOver();
+        return;
+      }
+      // Continue with next player
+      soloTriggerAI();
+      return;
+    }
+  }
+
   // Delay for natural feel
   const delay = 800 + Math.random() * 700;
   setTimeout(() => {
