@@ -236,13 +236,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Speed control for spectate mode
-  socket.on('set-speed', ({ multiplier }) => {
-    const room = games.get(socket.gameId);
-    if (!room || !room.spectateMode) return;
-    room.speedMultiplier = Math.max(1, Math.min(10, multiplier || 1));
-  });
-
   socket.on('disconnect', () => {
     if (socket.gameId) {
       const room = games.get(socket.gameId);
@@ -277,8 +270,7 @@ function executeAITurns(gameId) {
   const ai = getActiveAI(room);
   if (!ai) return; // It's the human's turn
 
-  const speed = room.speedMultiplier || 1;
-  const delay = (1000 + Math.random() * 1000) / speed;
+  const delay = 1000 + Math.random() * 1000;
 
   setTimeout(() => {
     const room = games.get(gameId);
@@ -335,9 +327,7 @@ function executeAITurns(gameId) {
 }
 
 function executeAIChain(gameId) {
-  const room = games.get(gameId);
-  const speed = room ? (room.speedMultiplier || 1) : 1;
-  const chainDelay = (800 + Math.random() * 700) / speed;
+  const chainDelay = 800 + Math.random() * 700;
 
   setTimeout(() => {
     const room = games.get(gameId);
