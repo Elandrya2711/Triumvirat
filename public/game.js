@@ -23,9 +23,34 @@ let animationData = null;
 const ANIM_BASE_DURATION = 300; // ms base
 const ANIM_PER_PIXEL = 2; // ms per pixel distance
 let animQueue = []; // Queue for incoming moves while animating
+let animLock = false; // Issue #6: Lock for animation queue processing
 
 // Move trail: { player, segments: [{from, to}] } — visible until that player moves again
 let moveTrails = {}; // keyed by player index
+
+// Issue #4: Event listener tracking for cleanup
+let gameEventListeners = [];
+
+// Issue #4: Register socket events for cleanup
+function registerSocketEvent(event, handler) {
+  socket.on(event, handler);
+  gameEventListeners.push({ event, handler });
+}
+
+// Issue #4 & #12: Cleanup function for game events and state
+function cleanupGameEvents() {
+  for (const { event, handler } of gameEventListeners) {
+    socket.off(event, handler);
+  }
+  gameEventListeners = [];
+  animQueue = [];
+  animLock = false;
+  moveTrails = {}; // Issue #12: Clear trails
+  selectedPos = null;
+  validTargets = [];
+  animationData = null;
+  chainActive = null;
+}
 
 // Canvas setup
 const canvas = document.getElementById('board');
@@ -582,6 +607,7 @@ document.getElementById('surrender-btn').addEventListener('click', () => {
     } else {
       socket.emit('surrender');
     }
+    cleanupGameEvents(); // Issue #4: Cleanup when leaving game
     localStorage.removeItem('triumvirat-session');
     gameId = null;
     gameState = null;
@@ -593,6 +619,7 @@ document.getElementById('surrender-btn').addEventListener('click', () => {
 });
 
 document.getElementById('new-game-btn').addEventListener('click', () => {
+  cleanupGameEvents(); // Issue #4: Cleanup events when leaving game
   document.getElementById('game-over-overlay').classList.add('hidden');
   showScreen('lobby');
   gameState = null;
@@ -626,7 +653,8 @@ socket.on('connect', () => {
   tryReconnect();
 });
 
-socket.on('game-created', (data) => {
+// Issue #4: Register all socket events for cleanup
+registerSocketEvent('game-created', (data) => {
   gameId = data.gameId;
   myPlayerIndex = data.playerIndex;
   numPlayers = data.numPlayers;
@@ -645,7 +673,7 @@ socket.on('game-created', (data) => {
   // AI games auto-start via game-start event
 });
 
-socket.on('game-joined', (data) => {
+registerSocketEvent('game-joined', (data) => {
   gameId = data.gameId;
   myPlayerIndex = data.playerIndex;
   numPlayers = data.numPlayers;
@@ -659,7 +687,7 @@ socket.on('game-joined', (data) => {
   showScreen('waiting');
 });
 
-socket.on('player-joined', (data) => {
+registerSocketEvent('player-joined', (data) => {
   const listEl = document.getElementById('player-list');
   listEl.innerHTML = data.players.map(p => 
     `<div class="player-item" style="background:${colors[p.index]}">${p.name}</div>`
@@ -669,7 +697,7 @@ socket.on('player-joined', (data) => {
   document.getElementById('waiting-info').style.display = needed > 0 ? 'block' : 'none';
 });
 
-socket.on('game-start', (data) => {
+registerSocketEvent('game-start', (data) => {
   gameState = data.state;
   moveTrails = {};
   if (data.players) playerNames = data.players.map(p => p.name);
@@ -681,28 +709,40 @@ socket.on('game-start', (data) => {
   saveSession();
 });
 
-socket.on('valid-moves', (data) => {
+registerSocketEvent('valid-moves', (data) => {
   if (data.from === selectedPos) {
     validTargets = data.moves;
     render();
   }
 });
 
+// Issue #6: Fixed animation queue race condition
 function processAnimQueue() {
-  if (animQueue.length === 0) return;
+  if (animQueue.length === 0 || animLock) return;
+  
+  animLock = true;
   const next = animQueue.shift();
-  handleMoveMade(next);
+  
+  handleMoveMade(next, () => {
+    animLock = false;
+    // Process next in queue with small delay
+    if (animQueue.length > 0) {
+      setTimeout(() => processAnimQueue(), 100);
+    }
+  });
 }
 
-socket.on('move-made', (data) => {
-  if (animating) {
-    animQueue.push(data);
-    return;
+// Issue #6: Updated to use queue with lock
+const handleMoveEvent = (data) => {
+  animQueue.push(data);
+  if (!animLock) {
+    processAnimQueue();
   }
-  handleMoveMade(data);
-});
+};
+registerSocketEvent('move-made', handleMoveEvent);
 
-function handleMoveMade(data) {
+// Issue #6: Added onComplete callback parameter
+function handleMoveMade(data, onComplete) {
   // Track move trail
   const movingPlayer = gameState ? gameState.currentPlayer : 0;
   
@@ -772,15 +812,15 @@ function handleMoveMade(data) {
     
     animateMove(data.from, data.to, movingMarble, data.captures, () => {
       applyMoveState();
-      processAnimQueue();
+      if (onComplete) onComplete(); // Issue #6: Call callback
     });
   } else {
     applyMoveState();
-    processAnimQueue();
+    if (onComplete) onComplete(); // Issue #6: Call callback
   }
 }
 
-socket.on('turn-ended', (data) => {
+registerSocketEvent('turn-ended', (data) => {
   gameState = data.state;
   chainActive = null;
   selectedPos = null;
@@ -791,7 +831,7 @@ socket.on('turn-ended', (data) => {
   updateStatus(gameState.currentPlayer === myPlayerIndex ? 'Du bist dran!' : 'Warte auf den Gegner...');
 });
 
-socket.on('game-over', (data) => {
+registerSocketEvent('game-over', (data) => {
   gameState = data.state;
   render();
   const overlay = document.getElementById('game-over-overlay');
@@ -803,9 +843,11 @@ socket.on('game-over', (data) => {
   }
   overlay.classList.remove('hidden');
   localStorage.removeItem('triumvirat-session');
+  // Issue #12: Clear trails after game over
+  setTimeout(() => { moveTrails = {}; }, 3000);
 });
 
-socket.on('reconnected', (data) => {
+registerSocketEvent('reconnected', (data) => {
   gameId = data.gameId;
   myPlayerIndex = data.playerIndex;
   numPlayers = data.numPlayers;
@@ -826,12 +868,12 @@ socket.on('reconnected', (data) => {
   showToast('🔄 Spiel wiederhergestellt!');
 });
 
-socket.on('reconnect-failed', () => {
+registerSocketEvent('reconnect-failed', () => {
   localStorage.removeItem('triumvirat-session');
   // Stay on lobby silently
 });
 
-socket.on('surrendered', (data) => {
+registerSocketEvent('surrendered', (data) => {
   gameState = data.state;
   render();
   const overlay = document.getElementById('game-over-overlay');
@@ -845,15 +887,18 @@ socket.on('surrendered', (data) => {
   localStorage.removeItem('triumvirat-session');
 });
 
-socket.on('not-your-turn', () => showToast('Nicht dein Zug!'));
-socket.on('invalid-move', (data) => showToast(data.error || 'Ungültiger Zug'));
-socket.on('error-msg', (data) => showToast(data.message));
-socket.on('player-disconnected', (data) => {
+registerSocketEvent('not-your-turn', () => showToast('Nicht dein Zug!'));
+registerSocketEvent('invalid-move', (data) => showToast(data.error || 'Ungültiger Zug'));
+registerSocketEvent('error-msg', (data) => showToast(data.message));
+registerSocketEvent('player-disconnected', (data) => {
   showToast(`${playerNames[data.playerIndex]} hat das Spiel verlassen`);
 });
 
-// Resize handling
-window.addEventListener('resize', resizeCanvas);
+// Resize handling (Issue #4: Track for cleanup)
+function handleResize() {
+  resizeCanvas();
+}
+window.addEventListener('resize', handleResize);
 
 // Check URL for game code
 const urlParams = new URLSearchParams(window.location.search);

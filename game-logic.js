@@ -108,14 +108,22 @@ class Game {
     this.chainActive = null;
     this.lastJumpedOver = null;  // Track last jumped-over position to prevent back-and-forth
     this.cornerForced = {};  // Per-player: { [playerIndex]: position } — marble forced to leave corner next turn
+    this.playerMarbles = {}; // Issue #9: Track marble positions per player for performance
     this._setupBoard();
   }
 
   _setupBoard() {
     const corners = [CORNER_A, CORNER_B, CORNER_C];
+    
+    // Issue #9: Initialize playerMarbles tracking
+    for (let p = 0; p < this.numPlayers; p++) {
+      this.playerMarbles[p] = [];
+    }
+    
     for (let p = 0; p < this.numPlayers; p++) {
       for (const { pos, size } of getStartPositions(corners[p])) {
         this.board[pos] = { player: p, size };
+        this.playerMarbles[p].push(pos); // Issue #9: Track position
       }
     }
   }
@@ -147,10 +155,14 @@ class Game {
     // If this player has a marble forced out of a corner, it must move first
     const forcedCornerMarble = this.cornerForced[player] !== undefined ? this.cornerForced[player] : null;
 
-    for (let i = 0; i < BOARD_SIZE; i++) {
+    // Issue #9: Only iterate over current player's marbles instead of entire board
+    const positions = forPos !== undefined 
+      ? [forPos] 
+      : (this.playerMarbles[player] || []);
+
+    for (const i of positions) {
       const cell = this.board[i];
       if (!cell || cell.player !== player) continue;
-      if (forPos !== undefined && i !== forPos) continue;
       // If a marble is forced out of corner, only allow moves for that marble
       if (forcedCornerMarble !== null && i !== forcedCornerMarble) continue;
 
@@ -256,12 +268,28 @@ class Game {
     this.board[from] = null;
     this.board[to] = marble;
 
-    for (const cap of move.captures) {
-      this.board[cap.pos] = null;
+    // Issue #9: Update playerMarbles tracking when moving
+    const player = marble.player;
+    const idx = this.playerMarbles[player].indexOf(from);
+    if (idx >= 0) {
+      this.playerMarbles[player][idx] = to;
     }
 
+    // Issue #9: Remove captured marbles from tracking
+    for (const cap of move.captures) {
+      this.board[cap.pos] = null;
+      const capPlayer = cap.marble.player;
+      const capIdx = this.playerMarbles[capPlayer].indexOf(cap.pos);
+      if (capIdx >= 0) {
+        this.playerMarbles[capPlayer].splice(capIdx, 1);
+      }
+    }
+
+    // Issue #10: Explicit clear for non-jump moves
     if (move.isJump) {
       this.lastJumpedOver = this._getJumpedPosition(from, to);
+    } else {
+      this.lastJumpedOver = null;
     }
 
     this.moveHistory.push({ from, to, captures: move.captures, player: this.currentPlayer });
@@ -297,11 +325,17 @@ class Game {
   }
 
   _skipEliminatedPlayers() {
+    // Issue #5: Fix potential infinite loop
     const counts = this._getMarbleCounts();
-    // Skip players with 0 marbles (eliminated)
-    for (let i = 0; i < this.numPlayers; i++) {
-      if (counts[this.currentPlayer] > 0) break;
+    let attempts = 0;
+    while (counts[this.currentPlayer] === 0 && attempts < this.numPlayers) {
       this.currentPlayer = (this.currentPlayer + 1) % this.numPlayers;
+      attempts++;
+    }
+    // If still 0 after checking all players, game should be over
+    if (counts[this.currentPlayer] === 0) {
+      this.gameOver = true;
+      this.winner = -1; // Draw/Error state
     }
   }
 
@@ -352,4 +386,14 @@ function getBoardLayout() {
   return positions;
 }
 
-module.exports = { Game, getBoardLayout, BOARD_SIZE, CORNERS, ADJACENCY, NUM_ROWS };
+// Issue #8: Export functions for AI-Player to avoid duplication
+module.exports = { 
+  Game, 
+  getBoardLayout, 
+  BOARD_SIZE, 
+  CORNERS, 
+  ADJACENCY, 
+  NUM_ROWS,
+  indexToRowCol,
+  getJumpLanding
+};

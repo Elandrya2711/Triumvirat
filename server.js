@@ -20,6 +20,22 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Active games: gameId -> { game, players: [{id, name, socketId}], spectators: [] }
 const games = new Map();
 
+// Rate limiting for game creation
+const createGameLimits = new Map(); // socket.id → { count, resetTime }
+const MAX_GAMES_PER_MINUTE = 5;
+
+// Input sanitization helpers
+function sanitizeString(str, maxLen = 20, fallback = '') {
+  if (typeof str !== 'string') return fallback;
+  return str.trim().substring(0, maxLen).replace(/[<>]/g, '');
+}
+
+function validateNumber(num, min, max, fallback) {
+  const n = parseInt(num);
+  if (isNaN(n) || n < min || n > max) return fallback;
+  return n;
+}
+
 const PLAYER_COLORS = ['#e74c3c', '#2ecc71', '#3498db']; // Red, Green, Blue
 const PLAYER_NAMES = ['Rot', 'Grün', 'Blau'];
 
@@ -28,11 +44,34 @@ io.on('connection', (socket) => {
 
   // Create a new game
   socket.on('create-game', ({ playerName, numPlayers, vsAI, spectate, difficulty }) => {
+    // Rate limiting (Issue #13)
+    const now = Date.now();
+    const limit = createGameLimits.get(socket.id) || { count: 0, resetTime: now + 60000 };
+    
+    if (now > limit.resetTime) {
+      // Reset after 1 minute
+      limit.count = 0;
+      limit.resetTime = now + 60000;
+    }
+    
+    if (limit.count >= MAX_GAMES_PER_MINUTE) {
+      socket.emit('error-msg', { message: 'Zu viele Spiele erstellt. Bitte warte einen Moment.' });
+      return;
+    }
+    
+    limit.count++;
+    createGameLimits.set(socket.id, limit);
+    
+    // Input validation (Issue #3)
+    playerName = sanitizeString(playerName, 20, 'Spieler');
+    numPlayers = validateNumber(numPlayers, 2, 3, 3);
+    difficulty = validateNumber(difficulty, 1, 5, 3);
+    
     const gameId = uuidv4().substring(0, 8);
     const isSpectate = !!spectate;
-    const effectivePlayers = isSpectate ? 3 : (vsAI ? (numPlayers || 2) : (numPlayers || 3));
+    const effectivePlayers = isSpectate ? 3 : (vsAI ? numPlayers : numPlayers);
     const game = new Game(effectivePlayers);
-    const diff = Math.max(1, Math.min(5, difficulty || 3));
+    const diff = difficulty;
     
     const room = {
       game,
@@ -44,7 +83,9 @@ io.on('connection', (socket) => {
       spectateMode: isSpectate,
       ai: null,
       aiPlayers: [],
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      lastActivity: Date.now(), // Issue #1: Track activity for memory leak fix
+      aiExecuting: false // Issue #2: Lock for AI execution race condition
     };
 
     if (isSpectate) {
@@ -106,6 +147,10 @@ io.on('connection', (socket) => {
 
   // Join existing game
   socket.on('join-game', ({ gameId, playerName }) => {
+    // Input validation (Issue #3)
+    gameId = sanitizeString(gameId, 12, '');
+    playerName = sanitizeString(playerName, 20, 'Spieler');
+    
     const room = games.get(gameId);
     if (!room) {
       socket.emit('error-msg', { message: 'Spiel nicht gefunden' });
@@ -118,6 +163,7 @@ io.on('connection', (socket) => {
 
     const playerIndex = room.players.length;
     room.players.push({ id: socket.id, name: playerName || `Spieler ${playerIndex + 1}`, index: playerIndex });
+    room.lastActivity = Date.now(); // Issue #1: Update activity
 
     socket.join(gameId);
     socket.gameId = gameId;
@@ -184,6 +230,8 @@ io.on('connection', (socket) => {
       return;
     }
 
+    room.lastActivity = Date.now(); // Issue #1: Update activity
+    
     const result = room.game.makeMove(from, to);
     if (!result.valid) {
       socket.emit('invalid-move', { error: result.error });
@@ -226,6 +274,8 @@ io.on('connection', (socket) => {
       return;
     }
 
+    room.lastActivity = Date.now(); // Issue #1: Update activity
+    
     room.game.endTurn();
     io.to(socket.gameId).emit('turn-ended', {
       state: room.game.getState()
@@ -239,11 +289,18 @@ io.on('connection', (socket) => {
 
   // Reconnect to existing game
   socket.on('reconnect-game', ({ gameId, playerIndex, playerName }) => {
+    // Input validation (Issue #3)
+    gameId = sanitizeString(gameId, 12, '');
+    playerName = sanitizeString(playerName, 20, 'Spieler');
+    playerIndex = validateNumber(playerIndex, -1, 2, -1);
+    
     const room = games.get(gameId);
     if (!room || !room.started) {
       socket.emit('reconnect-failed');
       return;
     }
+    
+    room.lastActivity = Date.now(); // Issue #1: Update activity
     
     // Spectator reconnect
     if (playerIndex === -1 && room.spectateMode) {
@@ -299,6 +356,8 @@ io.on('connection', (socket) => {
     const room = games.get(socket.gameId);
     if (!room || !room.started || room.game.gameOver) return;
     
+    room.lastActivity = Date.now(); // Issue #1: Update activity
+    
     const surrenderedPlayer = socket.playerIndex;
     const surrenderedName = room.players.find(p => p.index === surrenderedPlayer)?.name || 'Unbekannt';
     
@@ -351,6 +410,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    // Cleanup rate limiter (Issue #13)
+    createGameLimits.delete(socket.id);
+    
     if (socket.gameId) {
       const room = games.get(socket.gameId);
       if (room) {
@@ -360,41 +422,56 @@ io.on('connection', (socket) => {
         // Mark player as disconnected but keep in list for reconnect
         const player = room.players.find(p => p.id === socket.id);
         if (player) player.disconnected = true;
-        // Only delete game if ALL human players are disconnected and game is over
+        // Issue #1: Improved cleanup logic
         const humanPlayers = room.players.filter(p => !p.id.startsWith('ai-'));
         const allDisconnected = humanPlayers.every(p => p.disconnected);
-        if (allDisconnected && room.game.gameOver) {
+        const activeHumans = humanPlayers.filter(p => !p.disconnected).length;
+        const age = Date.now() - (room.createdAt || 0);
+        
+        // Delete if: (all humans disconnected AND game over) OR (no active humans AND game older than 2min)
+        if ((allDisconnected && room.game.gameOver) || (activeHumans === 0 && age > 2 * 60 * 1000)) {
           games.delete(socket.gameId);
-          console.log(`Game ${socket.gameId} deleted (all disconnected + game over)`);
+          console.log(`Game ${socket.gameId} deleted (disconnected cleanup)`);
         }
       }
     }
   });
 });
 
-// Find the AI player for the current turn
+// Find the AI player for the current turn (Issue #11: Error logging)
 function getActiveAI(room) {
   const currentPlayer = room.game.currentPlayer;
   const ai = room.aiPlayers.find(ai => ai.playerIndex === currentPlayer) || null;
-  console.log(`getActiveAI: currentPlayer=${currentPlayer}, aiPlayers=[${room.aiPlayers.map(a=>a.playerIndex)}], found=${!!ai}`);
+  
+  if (ai === null && room.vsAI) {
+    console.error(`⚠️ Expected AI for player ${currentPlayer} but none found! aiPlayers: [${room.aiPlayers.map(a => a.playerIndex)}]`);
+  }
+  
   return ai;
 }
 
-// Execute AI turns - will chain through multiple AIs if needed
+// Execute AI turns - will chain through multiple AIs if needed (Issue #2: AI lock)
 function executeAITurns(gameId) {
   const room = games.get(gameId);
-  if (!room || !room.vsAI || room.game.gameOver) return;
+  if (!room || !room.vsAI || room.game.gameOver || room.aiExecuting) return;
   
   const ai = getActiveAI(room);
   if (!ai) return; // It's the human's turn
 
+  room.aiExecuting = true; // Issue #2: Set lock
   const delay = 1000 + Math.random() * 1000;
 
   setTimeout(() => {
     const room = games.get(gameId);
-    if (!room || room.game.gameOver) return;
+    if (!room || room.game.gameOver) {
+      if (room) room.aiExecuting = false;
+      return;
+    }
     const ai = getActiveAI(room);
-    if (!ai) return;
+    if (!ai) {
+      room.aiExecuting = false;
+      return;
+    }
 
     let move;
     try {
@@ -407,12 +484,16 @@ function executeAITurns(gameId) {
     }
     if (!move) {
       console.error('AI has no moves! Player:', room.game.currentPlayer);
+      room.aiExecuting = false;
       return;
     }
 
+    room.lastActivity = Date.now(); // Issue #1: Update activity
+    
     const result = room.game.makeMove(move.from, move.to);
     if (!result.valid) {
       console.error('AI made invalid move:', move, result.error);
+      room.aiExecuting = false;
       return;
     }
 
@@ -432,9 +513,12 @@ function executeAITurns(gameId) {
         winnerName: winnerPlayer ? winnerPlayer.name : PLAYER_NAMES[room.game.winner],
         state: room.game.getState()
       });
+      room.aiExecuting = false; // Issue #2: Release lock
       return;
     }
 
+    room.aiExecuting = false; // Issue #2: Release lock
+    
     if (result.chainActive !== null && result.chainActive !== undefined) {
       executeAIChain(gameId);
     } else {
@@ -445,13 +529,23 @@ function executeAITurns(gameId) {
 }
 
 function executeAIChain(gameId) {
+  const room = games.get(gameId);
+  if (!room || room.game.gameOver || room.game.chainActive === null || room.aiExecuting) return;
+  
+  room.aiExecuting = true; // Issue #2: Set lock
   const chainDelay = 800 + Math.random() * 700;
 
   setTimeout(() => {
     const room = games.get(gameId);
-    if (!room || room.game.gameOver || room.game.chainActive === null) return;
+    if (!room || room.game.gameOver || room.game.chainActive === null) {
+      if (room) room.aiExecuting = false;
+      return;
+    }
     const ai = getActiveAI(room);
-    if (!ai) return;
+    if (!ai) {
+      room.aiExecuting = false;
+      return;
+    }
 
     let cont;
     try {
@@ -463,15 +557,19 @@ function executeAIChain(gameId) {
     if (!cont) {
       room.game.endTurn();
       io.to(gameId).emit('turn-ended', { state: room.game.getState() });
+      room.aiExecuting = false; // Issue #2: Release lock
       // After ending chain, check if next player is also AI
       executeAITurns(gameId);
       return;
     }
 
+    room.lastActivity = Date.now(); // Issue #1: Update activity
+    
     const result = room.game.makeMove(cont.from, cont.to);
     if (!result.valid) {
       room.game.endTurn();
       io.to(gameId).emit('turn-ended', { state: room.game.getState() });
+      room.aiExecuting = false; // Issue #2: Release lock
       executeAITurns(gameId);
       return;
     }
@@ -492,9 +590,12 @@ function executeAIChain(gameId) {
         winnerName: winnerPlayer ? winnerPlayer.name : PLAYER_NAMES[room.game.winner],
         state: room.game.getState()
       });
+      room.aiExecuting = false; // Issue #2: Release lock
       return;
     }
 
+    room.aiExecuting = false; // Issue #2: Release lock
+    
     if (result.chainActive !== null && result.chainActive !== undefined) {
       executeAIChain(gameId);
     } else {
@@ -503,18 +604,30 @@ function executeAIChain(gameId) {
   }, chainDelay);
 }
 
-// Auto-cleanup stale games every 5 minutes
+// Auto-cleanup stale games every 5 minutes (Issue #1: Improved with lastActivity)
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+const GAME_TIMEOUT_MS = 30 * 60 * 1000;
+const INACTIVE_TIMEOUT_MS = 10 * 60 * 1000;
+const FINISHED_GAME_TIMEOUT_MS = 5 * 60 * 1000;
+
 setInterval(() => {
   const now = Date.now();
   for (const [id, room] of games.entries()) {
     const age = now - (room.createdAt || 0);
-    // Remove games older than 30 minutes, or finished games older than 5 minutes
-    if (age > 30 * 60 * 1000 || (room.game.gameOver && age > 5 * 60 * 1000)) {
+    const inactiveTime = now - (room.lastActivity || room.createdAt || 0);
+    
+    // Delete if:
+    // 1. Game is older than 30 minutes
+    // 2. Game is finished and older than 5 minutes
+    // 3. Game is inactive for 10 minutes
+    if (age > GAME_TIMEOUT_MS || 
+        (room.game.gameOver && age > FINISHED_GAME_TIMEOUT_MS) ||
+        inactiveTime > INACTIVE_TIMEOUT_MS) {
       games.delete(id);
-      console.log(`Cleaned up stale game ${id} (age: ${Math.round(age / 60000)}min)`);
+      console.log(`Cleaned up game ${id} (age: ${Math.round(age / 60000)}min, inactive: ${Math.round(inactiveTime / 60000)}min)`);
     }
   }
-}, 5 * 60 * 1000);
+}, CLEANUP_INTERVAL_MS);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {

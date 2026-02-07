@@ -3,7 +3,8 @@
  * Strong strategic play with ~10% imperfection for human feel.
  */
 
-const { Game, ADJACENCY, CORNERS, BOARD_SIZE } = require('./game-logic');
+// Issue #8: Import functions to avoid duplication
+const { Game, ADJACENCY, CORNERS, BOARD_SIZE, indexToRowCol, getJumpLanding } = require('./game-logic');
 
 // Position value: center positions have more mobility
 const POS_VALUE = new Array(BOARD_SIZE).fill(0);
@@ -41,6 +42,7 @@ class AIPlayer {
     this.randomChance = settings.randomChance;
     this.maxDepth = settings.searchDepth;
     this.moveHistory = [];  // Track last N moves to detect repetition
+    this.transpositionTable = new Map(); // Issue #7: Minimax caching for performance
   }
 
   chooseMove(game) {
@@ -211,9 +213,25 @@ class AIPlayer {
     if (game.chainActive !== null) game.endTurn();
   }
 
+  // Issue #7: Board hash for transposition table
+  _boardHash(game) {
+    // Simple hash: concatenate board state + current player
+    return game.board.map(c => c ? `${c.player}${c.size}` : '-').join('') + `|${game.currentPlayer}`;
+  }
+
   _minimax(game, depth, alpha, beta, _unused) {
+    // Issue #7: Check transposition table cache
+    const hash = this._boardHash(game);
+    const cached = this.transpositionTable.get(hash);
+    if (cached && cached.depth >= depth) {
+      return cached.score;
+    }
+    
     if (depth === 0 || game.gameOver) {
-      return this._evaluate(game);
+      const score = this._evaluate(game);
+      // Issue #7: Cache result
+      this.transpositionTable.set(hash, { score, depth });
+      return score;
     }
 
     const isMaximizing = game.currentPlayer === this.playerIndex;
@@ -263,6 +281,12 @@ class AIPlayer {
         alpha = Math.max(alpha, ev);
         if (beta <= alpha) break;
       }
+      // Issue #7: Cache result before returning
+      this.transpositionTable.set(hash, { score: maxEval, depth });
+      // Clear cache if too large (memory management)
+      if (this.transpositionTable.size > 10000) {
+        this.transpositionTable.clear();
+      }
       return maxEval;
     } else {
       let minEval = Infinity;
@@ -271,6 +295,12 @@ class AIPlayer {
         minEval = Math.min(minEval, ev);
         beta = Math.min(beta, ev);
         if (beta <= alpha) break;
+      }
+      // Issue #7: Cache result before returning
+      this.transpositionTable.set(hash, { score: minEval, depth });
+      // Clear cache if too large (memory management)
+      if (this.transpositionTable.size > 10000) {
+        this.transpositionTable.clear();
       }
       return minEval;
     }
@@ -330,7 +360,8 @@ class AIPlayer {
       if (!neighbor || neighbor.player === marble.player) continue;
       if (neighbor.size >= marble.size) {
         // Check if they can actually jump us (landing must be empty)
-        const landing = this._getJumpLanding(adj, pos);
+        // Issue #8: Use imported function
+        const landing = getJumpLanding(adj, pos);
         if (landing >= 0 && landing < BOARD_SIZE && !board[landing]) {
           // Threatened! Penalty proportional to our marble value
           penalty += marble.size === 3 ? 15 : marble.size === 2 ? 8 : 3;
@@ -346,7 +377,8 @@ class AIPlayer {
       const neighbor = board[adj];
       if (!neighbor || neighbor.player !== me) continue;
       if (neighbor.size >= enemyMarble.size) {
-        const landing = this._getJumpLanding(adj, pos);
+        // Issue #8: Use imported function
+        const landing = getJumpLanding(adj, pos);
         if (landing >= 0 && landing < BOARD_SIZE && !board[landing]) {
           bonus += enemyMarble.size === 3 ? 8 : enemyMarble.size === 2 ? 4 : 2;
         }
@@ -355,27 +387,7 @@ class AIPlayer {
     return bonus;
   }
 
-  _getJumpLanding(from, over) {
-    const f = this._indexToRowCol(from);
-    const o = this._indexToRowCol(over);
-    const dr = o.row - f.row;
-    const dc = o.col - f.col;
-    const nr = o.row + dr;
-    const nc = o.col + dc;
-    if (nr < 0 || nr >= 7 || nc < 0 || nc > nr) return -1;
-    return (nr * (nr + 1)) / 2 + nc;
-  }
-
-  _indexToRowCol(idx) {
-    let count = 0;
-    for (let row = 0; row < 7; row++) {
-      for (let col = 0; col <= row; col++) {
-        if (count === idx) return { row, col };
-        count++;
-      }
-    }
-    return { row: 0, col: 0 };
-  }
+  // Issue #8: Removed _getJumpLanding and _indexToRowCol — using imported functions
 
   _cloneGame(game) {
     const ng = Object.create(Game.prototype);
@@ -388,6 +400,11 @@ class AIPlayer {
     ng.chainActive = game.chainActive;
     ng.lastJumpedOver = game.lastJumpedOver;
     ng.cornerForced = { ...game.cornerForced };
+    // Issue #9: Deep copy playerMarbles tracking
+    ng.playerMarbles = {};
+    for (const p in game.playerMarbles) {
+      ng.playerMarbles[p] = [...game.playerMarbles[p]];
+    }
     return ng;
   }
 
