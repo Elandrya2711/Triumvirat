@@ -298,6 +298,16 @@ class Game {
       this.cornerForced = null;
     }
     this.currentPlayer = (this.currentPlayer + 1) % this.numPlayers;
+    this._skipEliminatedPlayers();
+  }
+
+  _skipEliminatedPlayers() {
+    const counts = this._getMarbleCounts();
+    // Skip players with 0 marbles (eliminated)
+    for (let i = 0; i < this.numPlayers; i++) {
+      if (counts[this.currentPlayer] > 0) break;
+      this.currentPlayer = (this.currentPlayer + 1) % this.numPlayers;
+    }
   }
 
   endTurn() {
@@ -313,20 +323,26 @@ class Game {
 
   _checkGameEnd() {
     const counts = this._getMarbleCounts();
+    
+    // Count how many players still have marbles (> 0)
+    let playersAlive = 0;
+    let lastAlive = 0;
     for (let p = 0; p < this.numPlayers; p++) {
-      if (counts[p] <= 1) {
-        this.gameOver = true;
-        let maxCount = 0, winner = 0;
-        for (let i = 0; i < this.numPlayers; i++) {
-          if (counts[i] > maxCount) { maxCount = counts[i]; winner = i; }
-        }
-        this.winner = winner;
-        return;
+      if (counts[p] > 0) {
+        playersAlive++;
+        lastAlive = p;
       }
     }
     
-    // Also check if current player has no valid moves (pass or lose)
-    // For simplicity, if no moves available, skip turn
+    // Game ends when only 1 player has marbles left
+    if (playersAlive <= 1) {
+      this.gameOver = true;
+      this.winner = lastAlive;
+      return;
+    }
+    
+    // In 2-player: also end if one player has 0 (other wins)
+    // Already covered above
   }
 }
 
