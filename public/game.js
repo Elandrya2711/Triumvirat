@@ -19,9 +19,10 @@ let animating = false;
 let chainActive = null; // position of marble in active chain jump
 
 // Animation state
-let animationData = null; // { fromPos, toPos, marble, progress, captures, onComplete }
+let animationData = null;
 const ANIM_BASE_DURATION = 300; // ms base
 const ANIM_PER_PIXEL = 2; // ms per pixel distance
+let animQueue = []; // Queue for incoming moves while animating
 
 // Move trail: { player, segments: [{from, to}] } — visible until that player moves again
 let moveTrails = {}; // keyed by player index
@@ -672,7 +673,21 @@ socket.on('valid-moves', (data) => {
   }
 });
 
+function processAnimQueue() {
+  if (animQueue.length === 0) return;
+  const next = animQueue.shift();
+  handleMoveMade(next);
+}
+
 socket.on('move-made', (data) => {
+  if (animating) {
+    animQueue.push(data);
+    return;
+  }
+  handleMoveMade(data);
+});
+
+function handleMoveMade(data) {
   // Track move trail
   const movingPlayer = gameState ? gameState.currentPlayer : 0;
   
@@ -740,11 +755,15 @@ socket.on('move-made', (data) => {
     }
     gameState = tempState;
     
-    animateMove(data.from, data.to, movingMarble, data.captures, applyMoveState);
+    animateMove(data.from, data.to, movingMarble, data.captures, () => {
+      applyMoveState();
+      processAnimQueue();
+    });
   } else {
     applyMoveState();
+    processAnimQueue();
   }
-});
+}
 
 socket.on('turn-ended', (data) => {
   gameState = data.state;
