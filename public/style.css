@@ -20,22 +20,27 @@
 
 body {
   font-family: 'Crimson Text', Georgia, serif;
-  background: #1a1410;
+  background: #162014;
   background-image:
-    radial-gradient(ellipse at 50% 30%, rgba(60,40,25,0.4) 0%, transparent 70%),
-    repeating-linear-gradient(
-      45deg,
-      transparent,
-      transparent 2px,
-      rgba(255,255,255,0.008) 2px,
-      rgba(255,255,255,0.008) 4px
-    );
+    radial-gradient(ellipse at 50% 40%, rgba(30,60,30,0.3) 0%, transparent 60%),
+    url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="%23162014"/><rect width="1" height="1" x="0" y="0" fill="%23172115" opacity="0.5"/><rect width="1" height="1" x="2" y="2" fill="%23152013" opacity="0.5"/></svg>');
   color: var(--parchment);
   min-height: 100vh;
   display: flex;
   justify-content: center;
   align-items: center;
+  /* Vignette overlay */
+  position: relative;
 }
+body::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(ellipse at 50% 45%, transparent 40%, rgba(0,0,0,0.5) 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+.screen { z-index: 1; position: relative; }
 
 .screen { display: none; width: 100%; max-width: 700px; padding: 20px; }
 .screen.active { display: flex; flex-direction: column; align-items: center; }
@@ -64,12 +69,14 @@ h2 {
 /* Lobby */
 .lobby-container { text-align: center; width: 100%; }
 .lobby-section {
-  background: linear-gradient(135deg, var(--wood-medium), var(--wood-dark));
+  background: linear-gradient(135deg, rgba(40,28,18,0.85), rgba(25,16,10,0.9));
   border-radius: 12px;
   padding: 25px;
   margin: 15px 0;
-  border: 2px solid var(--wood-light);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 4px 12px rgba(0,0,0,0.4);
+  border: 1px solid rgba(140,100,65,0.25);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 8px 24px rgba(0,0,0,0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 input[type="text"] {
@@ -305,12 +312,14 @@ canvas {
 }
 .overlay.hidden { display: none; }
 .overlay-content {
-  background: linear-gradient(135deg, var(--wood-medium), var(--wood-dark));
+  background: linear-gradient(135deg, rgba(40,28,18,0.95), rgba(25,16,10,0.95));
   padding: 40px;
   border-radius: 16px;
   text-align: center;
-  border: 3px solid var(--gold);
-  box-shadow: 0 0 30px rgba(212,160,23,0.3);
+  border: 2px solid rgba(212,160,23,0.4);
+  box-shadow: 0 0 40px rgba(212,160,23,0.15), 0 20px 60px rgba(0,0,0,0.5);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 .overlay-content h2 {
   font-size: 1.8em;

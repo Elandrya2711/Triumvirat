@@ -300,72 +300,123 @@ function drawHighlights() {
 }
 
 function drawMarble(x, y, radius, color, selected) {
-  // Shadow in the hollow
+  // 1. Shadow beneath marble (in the hollow, offset for 3D)
+  const shadowGrad = ctx.createRadialGradient(x + 2, y + 3, radius * 0.3, x + 2, y + 3, radius + 4);
+  shadowGrad.addColorStop(0, 'rgba(0,0,0,0.6)');
+  shadowGrad.addColorStop(0.6, 'rgba(0,0,0,0.2)');
+  shadowGrad.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.beginPath();
-  ctx.arc(x + 2, y + 3, radius + 2, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.arc(x + 2, y + 3, radius + 4, 0, Math.PI * 2);
+  ctx.fillStyle = shadowGrad;
   ctx.fill();
   
-  // Glass marble body — multi-stop gradient for depth
-  const grad = ctx.createRadialGradient(x - radius * 0.35, y - radius * 0.35, radius * 0.05, x, y, radius);
-  grad.addColorStop(0, lightenColor(color, 80));
-  grad.addColorStop(0.25, lightenColor(color, 30));
-  grad.addColorStop(0.6, color);
-  grad.addColorStop(0.85, darkenColor(color, 25));
-  grad.addColorStop(1, darkenColor(color, 50));
+  // 2. Main marble body — deep glass gradient
+  const bodyGrad = ctx.createRadialGradient(
+    x - radius * 0.25, y - radius * 0.25, radius * 0.05,
+    x + radius * 0.1, y + radius * 0.1, radius
+  );
+  bodyGrad.addColorStop(0, lightenColor(color, 70));
+  bodyGrad.addColorStop(0.15, lightenColor(color, 40));
+  bodyGrad.addColorStop(0.4, color);
+  bodyGrad.addColorStop(0.7, darkenColor(color, 15));
+  bodyGrad.addColorStop(0.9, darkenColor(color, 35));
+  bodyGrad.addColorStop(1, darkenColor(color, 55));
   
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = grad;
+  ctx.fillStyle = bodyGrad;
   ctx.fill();
   
-  // Glass rim
+  // 3. Inner swirl (offset darker region for glass depth)
+  const swirlGrad = ctx.createRadialGradient(
+    x + radius * 0.15, y + radius * 0.1, radius * 0.1,
+    x + radius * 0.1, y + radius * 0.05, radius * 0.6
+  );
+  swirlGrad.addColorStop(0, 'rgba(0,0,0,0.12)');
+  swirlGrad.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(255,255,255,0.15)`;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  
-  // Primary shine (top-left)
-  ctx.beginPath();
-  ctx.arc(x - radius * 0.3, y - radius * 0.3, radius * 0.35, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.fillStyle = swirlGrad;
   ctx.fill();
   
-  // Secondary small shine (bottom-right reflection)
+  // 4. Fresnel rim (edge darkening)
+  const rimGrad = ctx.createRadialGradient(x, y, radius * 0.7, x, y, radius);
+  rimGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  rimGrad.addColorStop(0.8, 'rgba(0,0,0,0)');
+  rimGrad.addColorStop(1, 'rgba(0,0,0,0.3)');
   ctx.beginPath();
-  ctx.arc(x + radius * 0.2, y + radius * 0.25, radius * 0.12, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = rimGrad;
   ctx.fill();
   
-  // Selection ring — golden glow
+  // 5. Main window reflection (large, soft, top-left)
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.clip();
+  
+  ctx.beginPath();
+  ctx.ellipse(x - radius * 0.28, y - radius * 0.32, radius * 0.38, radius * 0.25, -0.5, 0, Math.PI * 2);
+  const reflGrad = ctx.createRadialGradient(
+    x - radius * 0.28, y - radius * 0.32, 0,
+    x - radius * 0.28, y - radius * 0.32, radius * 0.38
+  );
+  reflGrad.addColorStop(0, 'rgba(255,255,255,0.65)');
+  reflGrad.addColorStop(0.5, 'rgba(255,255,255,0.25)');
+  reflGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = reflGrad;
+  ctx.fill();
+  ctx.restore();
+  
+  // 6. Sharp specular highlight (small, bright point)
+  ctx.beginPath();
+  ctx.arc(x - radius * 0.2, y - radius * 0.35, radius * 0.08, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fill();
+  
+  // 7. Secondary reflection (bottom-right, table bounce light)
+  ctx.beginPath();
+  ctx.arc(x + radius * 0.22, y + radius * 0.28, radius * 0.1, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fill();
+  
+  // 8. Selection ring — pulsing golden candlelight
   if (selected) {
     ctx.beginPath();
     ctx.arc(x, y, radius + 5, 0, Math.PI * 2);
     ctx.strokeStyle = '#d4a017';
-    ctx.lineWidth = 3;
-    ctx.shadowColor = '#d4a017';
-    ctx.shadowBlur = 10;
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = 'rgba(212,160,23,0.8)';
+    ctx.shadowBlur = 12;
     ctx.stroke();
     ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
   }
 }
 
 function drawHollow(x, y) {
-  // Carved hollow in wood
-  const hollowGrad = ctx.createRadialGradient(x, y, 2, x, y, 12);
-  hollowGrad.addColorStop(0, 'rgba(30,18,10,0.5)');
-  hollowGrad.addColorStop(0.7, 'rgba(40,25,15,0.3)');
-  hollowGrad.addColorStop(1, 'rgba(80,55,35,0.1)');
+  // Outer rim — light catching the edge (top-left brighter)
   ctx.beginPath();
-  ctx.arc(x, y, 12, 0, Math.PI * 2);
+  ctx.arc(x, y, 14, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(140,100,65,0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  
+  // Carved hollow — deeper gradient
+  const hollowGrad = ctx.createRadialGradient(x - 1, y - 1, 1, x, y, 13);
+  hollowGrad.addColorStop(0, 'rgba(15,8,4,0.7)');
+  hollowGrad.addColorStop(0.5, 'rgba(25,15,8,0.5)');
+  hollowGrad.addColorStop(0.8, 'rgba(50,32,18,0.3)');
+  hollowGrad.addColorStop(1, 'rgba(80,55,35,0.05)');
+  ctx.beginPath();
+  ctx.arc(x, y, 13, 0, Math.PI * 2);
   ctx.fillStyle = hollowGrad;
   ctx.fill();
   
-  // Subtle rim highlight
+  // Light edge on top (as if light hits the rim from above-left)
   ctx.beginPath();
-  ctx.arc(x, y, 11, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(120,85,55,0.3)';
+  ctx.arc(x, y, 12, Math.PI * 1.1, Math.PI * 1.8);
+  ctx.strokeStyle = 'rgba(180,140,100,0.2)';
   ctx.lineWidth = 1;
   ctx.stroke();
 }
