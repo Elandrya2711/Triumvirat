@@ -20,6 +20,8 @@
  * Player C zone: 27(large), 20,26(medium), 14,19,25(small)
  */
 
+// Wrap in IIFE to avoid polluting global scope in browser/worker
+(function() {
 const BOARD_SIZE = 28;
 const NUM_ROWS = 7;
 
@@ -439,6 +441,6 @@ const _gameExports = {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = _gameExports;
 } else if (typeof self !== 'undefined') {
-  // Browser or Web Worker
   self.GameLogic = _gameExports;
 }
+})();
