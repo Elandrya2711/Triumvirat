@@ -614,11 +614,15 @@ function handleClick(e) {
   
   // If clicking a valid target, make the move
   if (selectedPos !== null && validTargets.includes(pos)) {
-    if (soloMode) { soloMakeMove(selectedPos, pos); }
-    else { socket.emit('make-move', { from: selectedPos, to: pos }); }
-    selectedPos = null;
-    validTargets = [];
-    render();
+    if (soloMode) {
+      soloMakeMove(selectedPos, pos);
+      // soloMakeMove sets chainActive/validTargets/selectedPos — don't override
+    } else {
+      socket.emit('make-move', { from: selectedPos, to: pos });
+      selectedPos = null;
+      validTargets = [];
+      render();
+    }
     return;
   }
   
@@ -815,6 +819,7 @@ function saveSession() {
 }
 
 function tryReconnect() {
+  if (soloMode) return; // Solo mode doesn't use server
   const saved = localStorage.getItem('triumvirat-session');
   if (!saved) return;
   try {
@@ -1011,6 +1016,7 @@ function handleMoveMade(data, onComplete) {
 }
 
 registerSocketEvent('turn-ended', (data) => {
+  if (soloMode) return; // Solo mode handles turns locally
   gameState = data.state;
   chainActive = null;
   selectedPos = null;
@@ -1039,6 +1045,7 @@ registerSocketEvent('game-over', (data) => {
 });
 
 registerSocketEvent('reconnected', (data) => {
+  if (soloMode) return; // Solo mode doesn't use server
   gameId = data.gameId;
   myPlayerIndex = data.playerIndex;
   numPlayers = data.numPlayers;
@@ -1060,6 +1067,7 @@ registerSocketEvent('reconnected', (data) => {
 });
 
 registerSocketEvent('reconnect-failed', () => {
+  if (soloMode) return; // Ignore in solo mode
   localStorage.removeItem('triumvirat-session');
   // If we're on game screen, go back to lobby with message
   if (document.getElementById('game').classList.contains('active')) {
@@ -1289,8 +1297,7 @@ function soloMakeMove(from, to) {
   if (result.chainActive !== null && result.chainActive !== undefined) {
     chainActive = result.chainActive;
     selectedPos = result.chainActive; // Show golden glow on active marble
-    const jumps = soloGame.getContinuationJumps(chainActive);
-    validTargets = jumps.map(m => m.to);
+    validTargets = result.continuationMoves || soloGame.getContinuationJumps(chainActive).map(m => m.to);
     if (validTargets.length === 0) {
       // No further jumps possible — auto-end turn
       soloGame.endTurn();
