@@ -69,7 +69,7 @@ io.on('connection', (socket) => {
     
     const gameId = uuidv4().substring(0, 8);
     const isSpectate = !!spectate;
-    const effectivePlayers = isSpectate ? 3 : (vsAI ? numPlayers : numPlayers);
+    const effectivePlayers = numPlayers || 3;
     const game = new Game(effectivePlayers);
     const diff = difficulty;
     
@@ -89,9 +89,9 @@ io.on('connection', (socket) => {
     };
 
     if (isSpectate) {
-      // All 3 players are AI
-      for (let i = 0; i < 3; i++) {
-        const name = `🤖 Mako-Bot ${i + 1}`;
+      // All players are AI
+      for (let i = 0; i < effectivePlayers; i++) {
+        const name = effectivePlayers > 2 ? `🤖 Mako-Bot ${i + 1}` : (i === 0 ? '🤖 Mako-Bot Rot' : '🤖 Mako-Bot Grün');
         const ai = new AIPlayer(i, name, diff);
         room.aiPlayers.push(ai);
         room.players.push({ id: `ai-${i}`, name: ai.name, index: i });
@@ -397,6 +397,11 @@ io.on('connection', (socket) => {
     }
     
     console.log(`Player ${surrenderedPlayer} surrendered in game ${socket.gameId}`);
+    const oldGameId = socket.gameId;
+    socket.gameId = null;
+    socket.playerIndex = null;
+    // Leave room AFTER emitting so client gets the events
+    process.nextTick(() => socket.leave(oldGameId));
   });
 
   // Leave game (spectator or player wanting to quit without surrender)
