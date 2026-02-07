@@ -50,7 +50,7 @@ function resizeCanvas() {
 function computePositions(w, h) {
   posCoords = [];
   const pad = BOARD_PADDING;
-  const numRows = 6;
+  const numRows = 7;
   
   const topX = w / 2, topY = pad;
   const blX = pad, blY = h - pad;
@@ -98,11 +98,11 @@ function render() {
 
 function drawBoard(w, h) {
   // Subtle triangle background
-  if (posCoords.length < 21) return;
+  if (posCoords.length < 28) return;
   ctx.beginPath();
   ctx.moveTo(posCoords[0].x, posCoords[0].y - 30);
-  ctx.lineTo(posCoords[15].x - 30, posCoords[15].y + 20);
-  ctx.lineTo(posCoords[20].x + 30, posCoords[20].y + 20);
+  ctx.lineTo(posCoords[21].x - 30, posCoords[21].y + 20);
+  ctx.lineTo(posCoords[27].x + 30, posCoords[27].y + 20);
   ctx.closePath();
   ctx.fillStyle = 'rgba(15, 52, 96, 0.3)';
   ctx.fill();

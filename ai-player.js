@@ -8,10 +8,10 @@ const { Game, ADJACENCY, CORNERS, BOARD_SIZE } = require('./game-logic');
 // Position value: center positions have more mobility
 const POS_VALUE = new Array(BOARD_SIZE).fill(0);
 (() => {
-  // Row 0: corner → 0, Row 1: 2, Row 2: 4, Row 3: 6 (peak), Row 4: 5, Row 5: 3 (edges lower)
-  const rowVal = [0, 2, 4, 6, 5, 3];
+  // Row 0: corner → 0, Row 1-3: increasing, Row 3-4: peak, Row 5-6: decreasing
+  const rowVal = [0, 2, 4, 7, 6, 4, 2];
   let idx = 0;
-  for (let row = 0; row < 6; row++) {
+  for (let row = 0; row < 7; row++) {
     for (let col = 0; col <= row; col++) {
       let val = rowVal[row];
       // Edge columns worth less
@@ -324,13 +324,13 @@ class AIPlayer {
     const dc = o.col - f.col;
     const nr = o.row + dr;
     const nc = o.col + dc;
-    if (nr < 0 || nr >= 6 || nc < 0 || nc > nr) return -1;
+    if (nr < 0 || nr >= 7 || nc < 0 || nc > nr) return -1;
     return (nr * (nr + 1)) / 2 + nc;
   }
 
   _indexToRowCol(idx) {
     let count = 0;
-    for (let row = 0; row < 6; row++) {
+    for (let row = 0; row < 7; row++) {
       for (let col = 0; col <= row; col++) {
         if (count === idx) return { row, col };
         count++;

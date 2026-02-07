@@ -1,30 +1,31 @@
 /**
  * Triumvirat - Game Logic (Server-authoritative)
  * 
- * Triangular board with side length 5 = 21 positions.
+ * Triangular board with side length 7 = 28 positions.
  * Each player has 6 marbles (1 large=3, 2 medium=2, 3 small=1) in a corner.
  * 
  * Board layout (indices):
- *         0
- *        1  2
- *       3  4  5
- *      6  7  8  9
- *    10 11 12 13 14
- *   15 16 17 18 19 20
+ *           0
+ *          1  2
+ *         3  4  5
+ *        6  7  8  9
+ *      10 11 12 13 14
+ *     15 16 17 18 19 20
+ *    21 22 23 24 25 26 27
  *
- * Corner A (top) = 0, Corner B (bottom-left) = 15, Corner C (bottom-right) = 20
+ * Corner A (top) = 0, Corner B (bottom-left) = 21, Corner C (bottom-right) = 27
  * 
  * Player A zone: 0(large), 1,2(medium), 3,4,5(small)
- * Player B zone: 15(large), 10,16(medium), 6,11,17(small)  
- * Player C zone: 20(large), 14,19(medium), 9,13,18(small)
+ * Player B zone: 21(large), 15,22(medium), 10,16,23(small)  
+ * Player C zone: 27(large), 20,26(medium), 14,19,25(small)
  */
 
-const BOARD_SIZE = 21;
-const NUM_ROWS = 6;
+const BOARD_SIZE = 28;
+const NUM_ROWS = 7;
 
 const CORNER_A = 0;
-const CORNER_B = 15;
-const CORNER_C = 20;
+const CORNER_B = 21;
+const CORNER_C = 27;
 const CORNERS = [CORNER_A, CORNER_B, CORNER_C];
 
 function indexToRowCol(idx) {
@@ -73,22 +74,25 @@ for (let i = 0; i < BOARD_SIZE; i++) {
 
 function getStartPositions(corner) {
   if (corner === CORNER_A) {
+    // Top corner: row0=large, row1=medium, row2=small
     return [
       { pos: 0, size: 3 },
       { pos: 1, size: 2 }, { pos: 2, size: 2 },
       { pos: 3, size: 1 }, { pos: 4, size: 1 }, { pos: 5, size: 1 }
     ];
   } else if (corner === CORNER_B) {
+    // Bottom-left corner (pos 21): large=21, medium=15,22, small=10,16,23
     return [
-      { pos: 15, size: 3 },
-      { pos: 10, size: 2 }, { pos: 16, size: 2 },
-      { pos: 6, size: 1 }, { pos: 11, size: 1 }, { pos: 17, size: 1 }
+      { pos: 21, size: 3 },
+      { pos: 15, size: 2 }, { pos: 22, size: 2 },
+      { pos: 10, size: 1 }, { pos: 16, size: 1 }, { pos: 23, size: 1 }
     ];
   } else {
+    // Bottom-right corner (pos 27): large=27, medium=20,26, small=14,19,25
     return [
-      { pos: 20, size: 3 },
-      { pos: 14, size: 2 }, { pos: 19, size: 2 },
-      { pos: 9, size: 1 }, { pos: 13, size: 1 }, { pos: 18, size: 1 }
+      { pos: 27, size: 3 },
+      { pos: 20, size: 2 }, { pos: 26, size: 2 },
+      { pos: 14, size: 1 }, { pos: 19, size: 1 }, { pos: 25, size: 1 }
     ];
   }
 }
