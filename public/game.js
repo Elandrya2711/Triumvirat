@@ -22,6 +22,9 @@ let chainActive = null; // position of marble in active chain jump
 let animationData = null; // { fromPos, toPos, marble, progress, captures, onComplete }
 const ANIM_DURATION = 900; // ms per move
 
+// Move trail: { player, segments: [{from, to}] } — visible until that player moves again
+let moveTrails = {}; // keyed by player index
+
 // Canvas setup
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
@@ -86,6 +89,9 @@ function render() {
   // Draw connections
   drawConnections();
   
+  // Draw move trails
+  drawMoveTrails();
+  
   // Draw valid move highlights
   drawHighlights();
   
@@ -125,6 +131,50 @@ function drawConnections() {
       ctx.moveTo(posCoords[i].x, posCoords[i].y);
       ctx.lineTo(posCoords[j].x, posCoords[j].y);
       ctx.stroke();
+    }
+  }
+}
+
+function drawMoveTrails() {
+  for (const [playerIdx, trail] of Object.entries(moveTrails)) {
+    if (!trail.segments.length) continue;
+    const color = colors[playerIdx] || '#888';
+    
+    for (const seg of trail.segments) {
+      const from = posCoords[seg.from];
+      const to = posCoords[seg.to];
+      if (!from || !to) continue;
+      
+      // Glowing line
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+      ctx.globalAlpha = 0.4;
+      ctx.stroke();
+      
+      // Brighter center line
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.3;
+      ctx.stroke();
+      
+      ctx.globalAlpha = 1.0;
+    }
+    
+    // Dot at start of trail
+    const startPos = posCoords[trail.segments[0].from];
+    if (startPos) {
+      ctx.beginPath();
+      ctx.arc(startPos.x, startPos.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.5;
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
     }
   }
 }
@@ -567,6 +617,17 @@ socket.on('valid-moves', (data) => {
 });
 
 socket.on('move-made', (data) => {
+  // Track move trail
+  const movingPlayer = gameState ? gameState.currentPlayer : 0;
+  
+  // If this player already has a trail and it's a chain jump, append to it
+  if (chainActive !== null && moveTrails[movingPlayer]) {
+    moveTrails[movingPlayer].segments.push({ from: data.from, to: data.to });
+  } else {
+    // New move — clear old trail for this player, start fresh
+    moveTrails[movingPlayer] = { segments: [{ from: data.from, to: data.to }] };
+  }
+  
   // Get marble info from old state BEFORE updating
   const oldBoard = gameState ? gameState.board : null;
   const movingMarble = oldBoard ? oldBoard[data.from] : null;
