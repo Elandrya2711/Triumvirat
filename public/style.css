@@ -72,6 +72,9 @@ input:focus { outline: none; border-color: #e94560; }
 .ai-btn:hover { background: #7d3c98; }
 .spectate-btn { background: #e67e22; margin-left: 10px; margin-top: 8px; }
 .spectate-btn:hover { background: #d35400; }
+.speed-control { text-align: center; margin: 8px 0; color: #aaa; }
+.speed-control label { font-size: 14px; }
+.speed-control input[type="range"] { width: 120px; vertical-align: middle; margin-left: 8px; }
 
 /* AI Section */
 .ai-section { margin-top: 15px; }

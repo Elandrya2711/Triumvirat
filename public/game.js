@@ -526,6 +526,16 @@ document.getElementById('spectate-btn').addEventListener('click', () => {
   socket.emit('create-game', { playerName: 'Zuschauer', numPlayers: 3, spectate: true, difficulty });
 });
 
+// Speed slider for spectate mode
+const speedSlider = document.getElementById('speed-slider');
+const speedLabel = document.getElementById('speed-label');
+const SPEED_LABELS = { 1: '1x', 2: '2x', 3: '3x', 4: '5x', 5: '10x' };
+const SPEED_MULTIPLIERS = { 1: 1, 2: 2, 3: 3, 4: 5, 5: 10 };
+speedSlider.addEventListener('input', () => {
+  speedLabel.textContent = SPEED_LABELS[speedSlider.value];
+  socket.emit('set-speed', { multiplier: SPEED_MULTIPLIERS[speedSlider.value] });
+});
+
 document.getElementById('join-btn').addEventListener('click', () => {
   const name = document.getElementById('join-name').value.trim() || 'Spieler';
   const code = document.getElementById('game-code').value.trim();
@@ -580,6 +590,15 @@ socket.on('game-created', (data) => {
   
   document.getElementById('invite-code').textContent = gameId;
   document.getElementById('game-id-display').textContent = `#${gameId}`;
+  
+  // Show speed control in spectate mode
+  const speedControl = document.getElementById('speed-control');
+  if (data.spectateMode) {
+    speedControl.classList.remove('hidden');
+  } else {
+    speedControl.classList.add('hidden');
+  }
+  
   if (!data.vsAI) {
     showScreen('waiting');
   }

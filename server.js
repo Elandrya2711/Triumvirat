@@ -20,8 +20,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Active games: gameId -> { game, players: [{id, name, socketId}], spectators: [] }
 const games = new Map();
 
-const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71']; // Red, Blue, Green
-const PLAYER_NAMES = ['Rot', 'Blau', 'Grün'];
+const PLAYER_COLORS = ['#e74c3c', '#2ecc71', '#3498db']; // Red, Green, Blue
+const PLAYER_NAMES = ['Rot', 'Grün', 'Blau'];
 
 io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
@@ -236,6 +236,13 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Speed control for spectate mode
+  socket.on('set-speed', ({ multiplier }) => {
+    const room = games.get(socket.gameId);
+    if (!room || !room.spectateMode) return;
+    room.speedMultiplier = Math.max(1, Math.min(10, multiplier || 1));
+  });
+
   socket.on('disconnect', () => {
     if (socket.gameId) {
       const room = games.get(socket.gameId);
@@ -270,7 +277,8 @@ function executeAITurns(gameId) {
   const ai = getActiveAI(room);
   if (!ai) return; // It's the human's turn
 
-  const delay = 1000 + Math.random() * 1000;
+  const speed = room.speedMultiplier || 1;
+  const delay = (1000 + Math.random() * 1000) / speed;
 
   setTimeout(() => {
     const room = games.get(gameId);
@@ -327,7 +335,9 @@ function executeAITurns(gameId) {
 }
 
 function executeAIChain(gameId) {
-  const chainDelay = 800 + Math.random() * 700;
+  const room = games.get(gameId);
+  const speed = room ? (room.speedMultiplier || 1) : 1;
+  const chainDelay = (800 + Math.random() * 700) / speed;
 
   setTimeout(() => {
     const room = games.get(gameId);
