@@ -20,7 +20,8 @@ let chainActive = null; // position of marble in active chain jump
 
 // Animation state
 let animationData = null; // { fromPos, toPos, marble, progress, captures, onComplete }
-const ANIM_DURATION = 900; // ms per move
+const ANIM_BASE_DURATION = 300; // ms base
+const ANIM_PER_PIXEL = 2; // ms per pixel distance
 
 // Move trail: { player, segments: [{from, to}] } — visible until that player moves again
 let moveTrails = {}; // keyed by player index
@@ -315,20 +316,28 @@ function animateMove(from, to, marble, captures, onComplete) {
   }
   
   animating = true;
+  const fromCoord = { ...posCoords[from] };
+  const toCoord = { ...posCoords[to] };
+  const dx = toCoord.x - fromCoord.x;
+  const dy = toCoord.y - fromCoord.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const duration = Math.min(800, ANIM_BASE_DURATION + dist * ANIM_PER_PIXEL);
+  
   animationData = {
     fromPos: from,
     toPos: to,
-    fromCoord: { ...posCoords[from] },
-    toCoord: { ...posCoords[to] },
+    fromCoord,
+    toCoord,
     marble: { ...marble },
     progress: 0,
     captures: captures || [],
-    startTime: performance.now()
+    startTime: performance.now(),
+    duration
   };
   
   function step(timestamp) {
     const elapsed = timestamp - animationData.startTime;
-    animationData.progress = Math.min(1, elapsed / ANIM_DURATION);
+    animationData.progress = Math.min(1, elapsed / animationData.duration);
     
     render();
     
