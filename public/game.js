@@ -671,6 +671,7 @@ socket.on('player-joined', (data) => {
 
 socket.on('game-start', (data) => {
   gameState = data.state;
+  moveTrails = {};
   if (data.players) playerNames = data.players.map(p => p.name);
   showScreen('game');
   resizeCanvas();
