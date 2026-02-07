@@ -64,8 +64,8 @@ woodImg.onload = () => {
 woodImg.src = 'textures/wood-board.jpg';
 
 // Board rendering constants
-const BOARD_PADDING = 60;
-const MARBLE_SIZES = { 1: 14, 2: 19, 3: 24 }; // small, medium, large radius
+let BOARD_PADDING = 60;
+let MARBLE_SIZES = { 1: 14, 2: 19, 3: 24 }; // small, medium, large radius
 
 // Position coordinates cache
 let posCoords = [];
@@ -74,6 +74,15 @@ function resizeCanvas() {
   const container = canvas.parentElement;
   const w = Math.min(container.clientWidth, 600);
   const h = w * 0.9;
+  
+  // Scale padding and marble sizes for small screens
+  const scale = w / 600;
+  BOARD_PADDING = Math.max(30, Math.round(60 * scale));
+  MARBLE_SIZES = {
+    1: Math.max(9, Math.round(14 * scale)),
+    2: Math.max(12, Math.round(19 * scale)),
+    3: Math.max(16, Math.round(24 * scale))
+  };
   canvas.style.width = w + 'px';
   canvas.style.height = h + 'px';
   canvas.width = w * DPR;
@@ -535,7 +544,7 @@ function getClickedPosition(e) {
   const cy = y * scaleY;
   
   let closest = -1;
-  let minDist = 35;
+  let minDist = Math.max(25, 35 * (canvas.width / DPR / 600));
   for (let i = 0; i < posCoords.length; i++) {
     const dx = posCoords[i].x - cx;
     const dy = posCoords[i].y - cy;

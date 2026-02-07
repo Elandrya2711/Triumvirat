@@ -363,8 +363,54 @@ canvas {
 }
 .toast.hidden { opacity: 0; pointer-events: none; }
 
-@media (max-width: 500px) {
-  h1 { font-size: 1.8em; }
+@media (max-width: 600px) {
+  h1 { font-size: 1.8em; letter-spacing: 1px; }
+  h2 { font-size: 1.1em; }
+  .subtitle { font-size: 0.95em; margin-bottom: 15px; }
+  
+  .screen { padding: 10px; }
+  .lobby-section { padding: 15px; margin: 10px 0; }
+  
   .code-display { font-size: 1.8em; padding: 10px 20px; }
   canvas { width: 100% !important; }
+  
+  /* Game header compact */
+  .game-header { flex-direction: column; align-items: flex-start; gap: 5px; padding: 5px 0; }
+  .game-info { gap: 8px; }
+  .turn-info { font-size: 0.95em; padding: 4px 10px; }
+  .marble-counts { gap: 8px; }
+  .marble-count { font-size: 0.9em; }
+  
+  /* Buttons stack vertically */
+  .end-turn-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  .end-turn-btn { font-size: 0.95em; padding: 10px 20px; }
+  .surrender-btn { margin-left: 0; }
+  
+  /* Player count buttons */
+  .count-btn { padding: 8px 14px; font-size: 0.85em; margin: 3px; }
+  .primary-btn { padding: 12px 20px; font-size: 1em; }
+  .ai-btn, .spectate-btn { margin-left: 0; display: block; width: 100%; margin-top: 8px; }
+  
+  /* Rules popup */
+  .rules-content { max-width: 95vw; padding: 20px 15px; }
+  .rules-text h3 { font-size: 1em; }
+  .rules-text p, .rules-text ul { font-size: 0.9em; }
+  
+  /* Overlay */
+  .overlay-content { padding: 25px 20px; margin: 10px; }
+  .overlay-content h2 { font-size: 1.4em; }
+  
+  /* Input fields wider on mobile */
+  input[type="text"] { max-width: 100%; }
+  
+  .game-status { font-size: 0.9em; padding: 5px; }
+  
+  /* Difficulty slider full width */
+  .difficulty-slider input[type="range"] { width: 90%; }
+}
+
+@media (max-width: 360px) {
+  h1 { font-size: 1.5em; }
+  .lobby-section { padding: 12px; }
+  .primary-btn { padding: 10px 16px; font-size: 0.9em; }
 }
