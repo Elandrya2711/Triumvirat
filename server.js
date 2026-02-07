@@ -18,6 +18,10 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Serve shared modules for browser (isomorphic game-logic + ai-player)
+app.get('/game-logic.js', (req, res) => res.sendFile(path.join(__dirname, 'game-logic.js')));
+app.get('/ai-player.js', (req, res) => res.sendFile(path.join(__dirname, 'ai-player.js')));
+
 // Active games: gameId -> { game, players: [{id, name, socketId}], spectators: [] }
 const games = new Map();
 

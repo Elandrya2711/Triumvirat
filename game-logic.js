@@ -20,6 +20,8 @@
  * Player C zone: 27(large), 20,26(medium), 14,19,25(small)
  */
 
+// Wrap in IIFE to avoid polluting global scope in browser/worker
+(function() {
 const BOARD_SIZE = 28;
 const NUM_ROWS = 7;
 
@@ -424,8 +426,8 @@ function getBoardLayout() {
   return positions;
 }
 
-// Issue #8: Export functions for AI-Player to avoid duplication
-module.exports = { 
+// Isomorphic: works in Node.js (CommonJS) and Browser (global)
+const _gameExports = { 
   Game, 
   getBoardLayout, 
   BOARD_SIZE, 
@@ -435,3 +437,10 @@ module.exports = {
   indexToRowCol,
   getJumpLanding
 };
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = _gameExports;
+} else if (typeof self !== 'undefined') {
+  self.GameLogic = _gameExports;
+}
+})();
