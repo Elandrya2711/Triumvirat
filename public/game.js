@@ -57,6 +57,15 @@ const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const DPR = window.devicePixelRatio || 1;
 
+// Load wood texture for board
+let woodPattern = null;
+const woodImg = new Image();
+woodImg.onload = () => {
+  woodPattern = ctx.createPattern(woodImg, 'repeat');
+  render();
+};
+woodImg.src = 'textures/wood-board.jpg';
+
 // Board rendering constants
 const BOARD_PADDING = 60;
 const MARBLE_SIZES = { 1: 14, 2: 19, 3: 24 }; // small, medium, large radius
@@ -135,50 +144,60 @@ function drawBoard(w, h) {
   const p0 = posCoords[0], p21 = posCoords[21], p27 = posCoords[27];
   const margin = 35;
   
-  // Wood board shape (triangle with rounded feel)
+  // Board shape
   ctx.beginPath();
   ctx.moveTo(p0.x, p0.y - margin);
   ctx.lineTo(p21.x - margin, p21.y + margin * 0.7);
   ctx.lineTo(p27.x + margin, p27.y + margin * 0.7);
   ctx.closePath();
   
-  // Wood base color
-  const woodGrad = ctx.createLinearGradient(0, p0.y - margin, 0, p21.y + margin);
-  woodGrad.addColorStop(0, '#6d4c30');
-  woodGrad.addColorStop(0.3, '#7a5636');
-  woodGrad.addColorStop(0.6, '#6d4c30');
-  woodGrad.addColorStop(1, '#5a3d25');
-  ctx.fillStyle = woodGrad;
+  // Fill with wood texture or fallback gradient
+  if (woodPattern) {
+    ctx.fillStyle = woodPattern;
+  } else {
+    const woodGrad = ctx.createLinearGradient(0, p0.y - margin, 0, p21.y + margin);
+    woodGrad.addColorStop(0, '#6d4c30');
+    woodGrad.addColorStop(0.5, '#7a5636');
+    woodGrad.addColorStop(1, '#5a3d25');
+    ctx.fillStyle = woodGrad;
+  }
   ctx.fill();
   
-  // Wood grain lines
+  // Subtle varnish overlay for shine
   ctx.save();
-  ctx.clip();
-  ctx.strokeStyle = 'rgba(90,55,30,0.3)';
-  ctx.lineWidth = 1;
-  for (let y = p0.y - margin; y < p21.y + margin; y += 8) {
-    ctx.beginPath();
-    ctx.moveTo(p21.x - margin - 10, y + Math.sin(y * 0.05) * 3);
-    ctx.bezierCurveTo(
-      w * 0.3, y + Math.sin(y * 0.08) * 5,
-      w * 0.7, y + Math.cos(y * 0.06) * 4,
-      p27.x + margin + 10, y + Math.sin(y * 0.07) * 3
-    );
-    ctx.stroke();
-  }
-  ctx.restore();
-  
-  // Board border (carved edge)
   ctx.beginPath();
   ctx.moveTo(p0.x, p0.y - margin);
   ctx.lineTo(p21.x - margin, p21.y + margin * 0.7);
   ctx.lineTo(p27.x + margin, p27.y + margin * 0.7);
   ctx.closePath();
-  ctx.strokeStyle = '#3e2518';
-  ctx.lineWidth = 4;
+  ctx.clip();
+  const varnish = ctx.createLinearGradient(p21.x, p0.y, p27.x, p21.y);
+  varnish.addColorStop(0, 'rgba(255,255,255,0.04)');
+  varnish.addColorStop(0.3, 'rgba(255,255,255,0.08)');
+  varnish.addColorStop(0.5, 'rgba(255,255,255,0.02)');
+  varnish.addColorStop(1, 'rgba(0,0,0,0.05)');
+  ctx.fillStyle = varnish;
+  ctx.fill();
+  ctx.restore();
+  
+  // Board border — dark outer edge
+  ctx.beginPath();
+  ctx.moveTo(p0.x, p0.y - margin);
+  ctx.lineTo(p21.x - margin, p21.y + margin * 0.7);
+  ctx.lineTo(p27.x + margin, p27.y + margin * 0.7);
+  ctx.closePath();
+  ctx.strokeStyle = '#1a0e08';
+  ctx.lineWidth = 5;
   ctx.stroke();
-  ctx.strokeStyle = 'rgba(160,120,80,0.3)';
-  ctx.lineWidth = 1;
+  
+  // Inner highlight edge
+  ctx.beginPath();
+  ctx.moveTo(p0.x, p0.y - margin + 3);
+  ctx.lineTo(p21.x - margin + 3, p21.y + margin * 0.7 - 2);
+  ctx.lineTo(p27.x + margin - 3, p27.y + margin * 0.7 - 2);
+  ctx.closePath();
+  ctx.strokeStyle = 'rgba(180,140,100,0.25)';
+  ctx.lineWidth = 1.5;
   ctx.stroke();
 }
 

@@ -21,21 +21,10 @@
 body {
   font-family: 'Crimson Text', Georgia, serif;
   background: var(--wood-bg);
-  background-image:
-    repeating-linear-gradient(
-      90deg,
-      transparent,
-      transparent 40px,
-      rgba(0,0,0,0.03) 40px,
-      rgba(0,0,0,0.03) 42px
-    ),
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 200px,
-      rgba(0,0,0,0.02) 200px,
-      rgba(0,0,0,0.02) 202px
-    );
+  background-image: url('textures/wood-bg.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
   color: var(--parchment);
   min-height: 100vh;
   display: flex;
