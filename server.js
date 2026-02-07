@@ -238,7 +238,9 @@ io.on('connection', (socket) => {
 // Find the AI player for the current turn
 function getActiveAI(room) {
   const currentPlayer = room.game.currentPlayer;
-  return room.aiPlayers.find(ai => ai.playerIndex === currentPlayer) || null;
+  const ai = room.aiPlayers.find(ai => ai.playerIndex === currentPlayer) || null;
+  console.log(`getActiveAI: currentPlayer=${currentPlayer}, aiPlayers=[${room.aiPlayers.map(a=>a.playerIndex)}], found=${!!ai}`);
+  return ai;
 }
 
 // Execute AI turns - will chain through multiple AIs if needed

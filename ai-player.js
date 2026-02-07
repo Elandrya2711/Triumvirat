@@ -184,17 +184,19 @@ class AIPlayer {
     if (game.chainActive !== null) game.endTurn();
   }
 
-  _minimax(game, depth, alpha, beta, isMaximizing) {
+  _minimax(game, depth, alpha, beta, _unused) {
     if (depth === 0 || game.gameOver) {
       return this._evaluate(game);
     }
+
+    const isMaximizing = game.currentPlayer === this.playerIndex;
 
     const moves = game.getValidMoves();
     if (moves.length === 0) {
       // No moves — skip turn
       const ng = this._cloneGame(game);
       ng.currentPlayer = (ng.currentPlayer + 1) % ng.numPlayers;
-      return this._minimax(ng, depth - 1, alpha, beta, !isMaximizing);
+      return this._minimax(ng, depth - 1, alpha, beta, false);
     }
 
     // Group moves into full sequences (with chains) but limit for performance
