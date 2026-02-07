@@ -89,9 +89,9 @@ io.on('connection', (socket) => {
     };
 
     if (isSpectate) {
-      // All 3 players are AI
-      for (let i = 0; i < 3; i++) {
-        const name = `🤖 Mako-Bot ${i + 1}`;
+      // All players are AI
+      for (let i = 0; i < effectivePlayers; i++) {
+        const name = effectivePlayers > 2 ? `🤖 Mako-Bot ${i + 1}` : (i === 0 ? '🤖 Mako-Bot Rot' : '🤖 Mako-Bot Grün');
         const ai = new AIPlayer(i, name, diff);
         room.aiPlayers.push(ai);
         room.players.push({ id: `ai-${i}`, name: ai.name, index: i });

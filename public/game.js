@@ -685,7 +685,7 @@ document.getElementById('ai-btn').addEventListener('click', () => {
 
 document.getElementById('spectate-btn').addEventListener('click', () => {
   const difficulty = parseInt(diffSlider.value);
-  socket.emit('create-game', { playerName: 'Zuschauer', numPlayers: 3, spectate: true, difficulty });
+  socket.emit('create-game', { playerName: 'Zuschauer', numPlayers, spectate: true, difficulty });
 });
 
 // Speed slider removed
