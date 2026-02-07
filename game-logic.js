@@ -424,8 +424,8 @@ function getBoardLayout() {
   return positions;
 }
 
-// Issue #8: Export functions for AI-Player to avoid duplication
-module.exports = { 
+// Isomorphic: works in Node.js (CommonJS) and Browser (global)
+const _gameExports = { 
   Game, 
   getBoardLayout, 
   BOARD_SIZE, 
@@ -435,3 +435,10 @@ module.exports = {
   indexToRowCol,
   getJumpLanding
 };
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = _gameExports;
+} else if (typeof self !== 'undefined') {
+  // Browser or Web Worker
+  self.GameLogic = _gameExports;
+}

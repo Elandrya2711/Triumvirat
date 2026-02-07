@@ -17,6 +17,10 @@ let selectedPos = null;
 let validTargets = [];
 let animating = false;
 let chainActive = null; // position of marble in active chain jump
+let soloMode = false; // true = local game, no server
+let soloGame = null;  // local Game instance (solo mode)
+let soloAIWorker = null; // Web Worker for AI
+let soloAIConfig = null; // { playerIndex, name, difficulty, moveHistory }
 
 // Animation state
 let animationData = null;
@@ -600,7 +604,8 @@ function handleClick(e) {
   // During chain jump, only allow clicking valid continuation targets
   if (chainActive !== null) {
     if (validTargets.includes(pos)) {
-      socket.emit('make-move', { from: chainActive, to: pos });
+      if (soloMode) { soloMakeMove(chainActive, pos); }
+      else { socket.emit('make-move', { from: chainActive, to: pos }); }
       return;
     }
     showToast('Springe weiter oder beende den Zug!');
@@ -609,7 +614,8 @@ function handleClick(e) {
   
   // If clicking a valid target, make the move
   if (selectedPos !== null && validTargets.includes(pos)) {
-    socket.emit('make-move', { from: selectedPos, to: pos });
+    if (soloMode) { soloMakeMove(selectedPos, pos); }
+    else { socket.emit('make-move', { from: selectedPos, to: pos }); }
     selectedPos = null;
     validTargets = [];
     render();
@@ -620,8 +626,12 @@ function handleClick(e) {
   const cell = gameState.board[pos];
   if (cell && cell.player === myPlayerIndex) {
     selectedPos = pos;
-    validTargets = [];
-    socket.emit('get-moves', { from: pos });
+    if (soloMode) {
+      soloGetMoves(pos);
+    } else {
+      validTargets = [];
+      socket.emit('get-moves', { from: pos });
+    }
     render();
     return;
   }
@@ -711,7 +721,7 @@ diffSlider.addEventListener('input', () => {
 document.getElementById('ai-btn').addEventListener('click', () => {
   const name = document.getElementById('player-name').value.trim() || 'Spieler 1';
   const difficulty = parseInt(diffSlider.value);
-  socket.emit('create-game', { playerName: name, numPlayers, vsAI: true, difficulty });
+  startSoloGame(name, numPlayers, difficulty);
 });
 
 // Spectate mode removed
@@ -754,7 +764,8 @@ function fallbackCopy(text) {
 
 document.getElementById('end-turn-btn').addEventListener('click', () => {
   if (chainActive !== null) {
-    socket.emit('end-turn');
+    if (soloMode) { soloEndTurn(); }
+    else { socket.emit('end-turn'); }
   }
 });
 
@@ -1102,3 +1113,348 @@ const joinCode = urlParams.get('join');
 if (joinCode) {
   document.getElementById('game-code').value = joinCode;
 }
+
+// ============================================================
+// SOLO MODE — Client-side game, no server required
+// ============================================================
+
+const PLAYER_COLORS_LOCAL = ['#e74c3c', '#2ecc71', '#3498db'];
+const PLAYER_NAMES_LOCAL = ['Rot', 'Grün', 'Blau'];
+
+function startSoloGame(playerName, numP, difficulty) {
+  // Load game-logic dynamically (should be cached after first load)
+  if (!self.GameLogic) {
+    showToast('⏳ Lade Spiel-Logik...');
+    const s1 = document.createElement('script');
+    s1.src = '/game-logic.js';
+    s1.onload = () => {
+      const s2 = document.createElement('script');
+      s2.src = '/ai-player.js';
+      s2.onload = () => startSoloGame(playerName, numP, difficulty);
+      document.head.appendChild(s2);
+    };
+    document.head.appendChild(s1);
+    return;
+  }
+  
+  const { Game, getBoardLayout, ADJACENCY: adj } = self.GameLogic;
+  
+  soloMode = true;
+  soloGame = new Game(numP);
+  gameId = 'solo-' + Math.random().toString(36).substr(2, 6);
+  myPlayerIndex = 0;
+  numPlayers = numP;
+  boardLayout = getBoardLayout();
+  adjacency = adj;
+  colors = PLAYER_COLORS_LOCAL;
+  playerNames = [playerName];
+  
+  // Create AI players for positions 1+
+  soloAIConfig = [];
+  for (let i = 1; i < numP; i++) {
+    const name = numP > 2 ? `🤖 Mako-Bot ${i}` : '🤖 Mako-Bot';
+    playerNames.push(name);
+    soloAIConfig.push({
+      playerIndex: i,
+      name,
+      difficulty,
+      moveHistory: [],
+      plannedChain: []
+    });
+  }
+  
+  // Start Web Worker for AI
+  if (soloAIWorker) soloAIWorker.terminate();
+  soloAIWorker = new Worker('/ai-webworker.js');
+  soloAIWorker.onmessage = handleAIWorkerMessage;
+  
+  gameState = soloGame.getState();
+  moveTrails = {};
+  chainActive = null;
+  selectedPos = null;
+  validTargets = [];
+  
+  showScreen('game');
+  document.getElementById('game-id-display').textContent = '🎮 Solo';
+  resizeCanvas();
+  updateTurnDisplay();
+  updateStatus('Wähle eine Kugel aus!');
+  document.getElementById('surrender-btn').textContent = '🏳️ Aufgeben';
+  
+  // Don't save to localStorage for solo games (no reconnect needed)
+}
+
+function soloGetMoves(from) {
+  if (!soloGame) return;
+  
+  if (soloGame.chainActive !== null) {
+    if (from !== soloGame.chainActive) {
+      validTargets = [];
+      return;
+    }
+    const jumps = soloGame.getContinuationJumps(from);
+    validTargets = jumps.map(m => m.to);
+    return;
+  }
+  
+  const moves = soloGame.getValidMoves(from);
+  validTargets = moves.map(m => m.to);
+}
+
+function soloMakeMove(from, to) {
+  if (!soloGame || soloGame.gameOver) return;
+  
+  const result = soloGame.makeMove(from, to);
+  if (!result.valid) {
+    showToast(result.error || 'Ungültiger Zug');
+    return;
+  }
+  
+  // Record trail
+  const player = gameState.currentPlayer;
+  moveTrails[player] = moveTrails[player] || [];
+  moveTrails[player].push({ from, to });
+  
+  // Animate
+  const prevState = gameState;
+  gameState = soloGame.getState();
+  
+  // Run animation
+  selectedPos = null;
+  validTargets = [];
+  
+  if (result.chainActive !== null && result.chainActive !== undefined) {
+    chainActive = result.chainActive;
+    const jumps = soloGame.getContinuationJumps(chainActive);
+    validTargets = jumps.map(m => m.to);
+    updateEndTurnButton();
+  } else {
+    chainActive = null;
+    updateEndTurnButton();
+    // Clear trails for the current player (move complete)
+    moveTrails[player] = [{ from, to }];
+  }
+  
+  render();
+  updateTurnDisplay();
+  
+  if (soloGame.gameOver) {
+    soloShowGameOver();
+    return;
+  }
+  
+  if (chainActive === null) {
+    updateStatus('Warte auf den Gegner...');
+    soloTriggerAI();
+  } else {
+    updateStatus('Kettensprung! Klicke weiter oder beende den Zug.');
+  }
+}
+
+function soloEndTurn() {
+  if (!soloGame || soloGame.chainActive === null) return;
+  
+  const player = soloGame.currentPlayer;
+  soloGame.endTurn();
+  gameState = soloGame.getState();
+  chainActive = null;
+  validTargets = [];
+  selectedPos = null;
+  updateEndTurnButton();
+  render();
+  updateTurnDisplay();
+  
+  if (soloGame.gameOver) {
+    soloShowGameOver();
+    return;
+  }
+  
+  updateStatus('Warte auf den Gegner...');
+  soloTriggerAI();
+}
+
+function soloTriggerAI() {
+  if (!soloGame || soloGame.gameOver || !soloAIWorker) return;
+  
+  const currentPlayer = soloGame.currentPlayer;
+  const aiConf = soloAIConfig.find(a => a.playerIndex === currentPlayer);
+  if (!aiConf) {
+    // Human's turn
+    updateStatus('Wähle eine Kugel aus!');
+    return;
+  }
+  
+  // Delay for natural feel
+  const delay = 800 + Math.random() * 700;
+  setTimeout(() => {
+    if (!soloGame || soloGame.gameOver) return;
+    soloAIWorker.postMessage({
+      type: 'chooseMove',
+      gameState: soloSerializeGame(),
+      aiConfig: aiConf
+    });
+  }, delay);
+}
+
+function handleAIWorkerMessage(e) {
+  const msg = e.data;
+  
+  if (msg.type === 'moveResult') {
+    if (!soloGame || soloGame.gameOver) return;
+    
+    // Sync AI history
+    const aiConf = soloAIConfig.find(a => a.playerIndex === soloGame.currentPlayer);
+    if (aiConf && msg.moveHistory) aiConf.moveHistory = msg.moveHistory;
+    if (aiConf && msg.plannedChain) aiConf.plannedChain = msg.plannedChain;
+    
+    const move = msg.move;
+    if (!move) return;
+    
+    const player = soloGame.currentPlayer;
+    const result = soloGame.makeMove(move.from, move.to);
+    if (!result.valid) return;
+    
+    const movingMarble = soloGame.board[move.to]; // marble is at destination after makeMove
+    const captures = result.captures || [];
+    moveTrails[player] = [{ from: move.from, to: move.to }];
+    gameState = soloGame.getState();
+    
+    // Animate the AI move
+    animateMove(move.from, move.to, movingMarble, captures, () => {
+      render();
+      updateTurnDisplay();
+      
+      if (soloGame.gameOver) {
+        soloShowGameOver();
+        return;
+      }
+      
+      if (result.chainActive !== null) {
+        // AI continues chain
+        soloAIContinueChain();
+      } else {
+        // Check if next player is also AI
+        soloTriggerAI();
+      }
+    });
+    
+  } else if (msg.type === 'continuationResult') {
+    if (!soloGame || soloGame.gameOver) return;
+    
+    const aiConf = soloAIConfig.find(a => a.playerIndex === soloGame.currentPlayer);
+    if (aiConf && msg.plannedChain) aiConf.plannedChain = msg.plannedChain;
+    
+    if (!msg.move) {
+      // AI ends chain
+      const player = soloGame.currentPlayer;
+      soloGame.endTurn();
+      gameState = soloGame.getState();
+      render();
+      updateTurnDisplay();
+      
+      if (soloGame.gameOver) { soloShowGameOver(); return; }
+      soloTriggerAI();
+      return;
+    }
+    
+    const player = soloGame.currentPlayer;
+    const result = soloGame.makeMove(msg.move.from, msg.move.to);
+    if (!result.valid) {
+      soloGame.endTurn();
+      gameState = soloGame.getState();
+      render();
+      updateTurnDisplay();
+      soloTriggerAI();
+      return;
+    }
+    
+    const contMarble = soloGame.board[msg.move.to];
+    const contCaptures = result.captures || [];
+    moveTrails[player] = moveTrails[player] || [];
+    moveTrails[player].push({ from: msg.move.from, to: msg.move.to });
+    gameState = soloGame.getState();
+    
+    animateMove(msg.move.from, msg.move.to, contMarble, contCaptures, () => {
+      render();
+      if (soloGame.gameOver) { soloShowGameOver(); return; }
+      if (result.chainActive !== null) {
+        soloAIContinueChain();
+      } else {
+        soloTriggerAI();
+      }
+    });
+    
+  } else if (msg.type === 'error') {
+    console.error('AI Worker error:', msg.error);
+  }
+}
+
+function soloAIContinueChain() {
+  if (!soloGame || soloGame.gameOver || soloGame.chainActive === null) return;
+  
+  const aiConf = soloAIConfig.find(a => a.playerIndex === soloGame.currentPlayer);
+  if (!aiConf) return;
+  
+  const delay = 500 + Math.random() * 400;
+  setTimeout(() => {
+    if (!soloGame || soloGame.gameOver) return;
+    soloAIWorker.postMessage({
+      type: 'chooseContinuation',
+      gameState: soloSerializeGame(),
+      aiConfig: aiConf
+    });
+  }, delay);
+}
+
+function soloSerializeGame() {
+  return {
+    board: soloGame.board.map(c => c ? { ...c } : null),
+    currentPlayer: soloGame.currentPlayer,
+    numPlayers: soloGame.numPlayers,
+    gameOver: soloGame.gameOver,
+    winner: soloGame.winner,
+    chainActive: soloGame.chainActive,
+    lastJumpedOver: soloGame.lastJumpedOver,
+    cornerForced: soloGame.cornerForced ? { ...soloGame.cornerForced } : {},
+    moveHistory: soloGame.moveHistory || []
+  };
+}
+
+function soloShowGameOver() {
+  const overlay = document.getElementById('game-over-overlay');
+  const winnerText = document.getElementById('winner-text');
+  if (soloGame.winner === myPlayerIndex) {
+    winnerText.textContent = '🏆 Du hast gewonnen!';
+  } else {
+    const name = playerNames[soloGame.winner] || 'Gegner';
+    winnerText.textContent = `${name} hat gewonnen!`;
+  }
+  overlay.classList.remove('hidden');
+  
+  // Cleanup
+  if (soloAIWorker) { soloAIWorker.terminate(); soloAIWorker = null; }
+}
+
+// Override surrender for solo mode
+const origSurrenderHandler = document.getElementById('surrender-btn').onclick;
+document.getElementById('surrender-btn').addEventListener('click', (e) => {
+  if (!soloMode || !soloGame) return; // let original handler run
+  e.stopImmediatePropagation();
+  if (confirm('Wirklich aufgeben?')) {
+    if (soloAIWorker) { soloAIWorker.terminate(); soloAIWorker = null; }
+    soloMode = false;
+    soloGame = null;
+    gameId = null;
+    gameState = null;
+    showScreen('lobby');
+  }
+}, true); // capture phase — runs before the original handler
+
+// Override new-game for solo mode
+document.getElementById('new-game-btn').addEventListener('click', () => {
+  if (soloMode) {
+    if (soloAIWorker) { soloAIWorker.terminate(); soloAIWorker = null; }
+    soloMode = false;
+    soloGame = null;
+  }
+}, true); // capture phase

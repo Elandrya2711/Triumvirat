@@ -3,8 +3,9 @@
  * Strong strategic play with ~10% imperfection for human feel.
  */
 
-// Issue #8: Import functions to avoid duplication
-const { Game, ADJACENCY, CORNERS, BOARD_SIZE, indexToRowCol, getJumpLanding } = require('./game-logic');
+// Isomorphic import: Node.js (require) or Browser (global)
+const { Game, ADJACENCY, CORNERS, BOARD_SIZE, indexToRowCol, getJumpLanding } = 
+  (typeof require !== 'undefined') ? require('./game-logic') : self.GameLogic;
 
 // Position value: center positions have more mobility
 const POS_VALUE = new Array(BOARD_SIZE).fill(0);
@@ -418,4 +419,9 @@ class AIPlayer {
   }
 }
 
-module.exports = { AIPlayer };
+// Isomorphic export
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { AIPlayer };
+} else if (typeof self !== 'undefined') {
+  self.AIPlayer = AIPlayer;
+}
