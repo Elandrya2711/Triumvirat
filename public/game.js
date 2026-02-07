@@ -358,9 +358,24 @@ document.getElementById('create-btn').addEventListener('click', () => {
   socket.emit('create-game', { playerName: name, numPlayers });
 });
 
+// Difficulty slider
+const diffSlider = document.getElementById('difficulty');
+const diffLabel = document.getElementById('diff-label');
+const DIFF_NAMES = {
+  1: 'Anfänger ⭐',
+  2: 'Leicht ⭐⭐',
+  3: 'Mittel ⭐⭐⭐',
+  4: 'Schwer ⭐⭐⭐⭐',
+  5: 'Unbesiegbar ⭐⭐⭐⭐⭐'
+};
+diffSlider.addEventListener('input', () => {
+  diffLabel.textContent = DIFF_NAMES[diffSlider.value];
+});
+
 document.getElementById('ai-btn').addEventListener('click', () => {
   const name = document.getElementById('player-name').value.trim() || 'Spieler 1';
-  socket.emit('create-game', { playerName: name, numPlayers: 2, vsAI: true });
+  const difficulty = parseInt(diffSlider.value);
+  socket.emit('create-game', { playerName: name, numPlayers, vsAI: true, difficulty });
 });
 
 document.getElementById('join-btn').addEventListener('click', () => {

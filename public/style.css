@@ -71,6 +71,44 @@ input:focus { outline: none; border-color: #e94560; }
 .ai-btn { background: #8e44ad; margin-left: 10px; }
 .ai-btn:hover { background: #7d3c98; }
 
+/* AI Section */
+.ai-section { margin-top: 15px; }
+.difficulty-slider {
+  margin: 10px 0 15px;
+}
+.difficulty-slider label {
+  display: block;
+  color: #ccc;
+  margin-bottom: 8px;
+  font-size: 1em;
+}
+.difficulty-slider input[type="range"] {
+  -webkit-appearance: none;
+  width: 80%;
+  max-width: 300px;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, #2ecc71, #f1c40f, #e94560, #8e44ad);
+  outline: none;
+}
+.difficulty-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  border: 2px solid #e94560;
+}
+.difficulty-slider input[type="range"]::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  border: 2px solid #e94560;
+}
+
 .secondary-btn {
   background: #16213e;
   color: #eee;

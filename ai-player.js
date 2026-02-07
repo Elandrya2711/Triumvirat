@@ -24,11 +24,22 @@ const POS_VALUE = new Array(BOARD_SIZE).fill(0);
   }
 })();
 
+const DIFFICULTY_SETTINGS = {
+  1: { name: 'Anfänger',    randomChance: 0.40, searchDepth: 1 },
+  2: { name: 'Leicht',      randomChance: 0.25, searchDepth: 2 },
+  3: { name: 'Mittel',      randomChance: 0.10, searchDepth: 3 },
+  4: { name: 'Schwer',      randomChance: 0.03, searchDepth: 4 },
+  5: { name: 'Unbesiegbar', randomChance: 0.00, searchDepth: 5 },
+};
+
 class AIPlayer {
-  constructor(playerIndex, name = '🤖 Mako-Bot') {
+  constructor(playerIndex, name = '🤖 Mako-Bot', difficulty = 3) {
     this.playerIndex = playerIndex;
     this.name = name;
-    this.maxDepth = 3;
+    this.difficulty = Math.max(1, Math.min(5, difficulty));
+    const settings = DIFFICULTY_SETTINGS[this.difficulty];
+    this.randomChance = settings.randomChance;
+    this.maxDepth = settings.searchDepth;
   }
 
   chooseMove(game) {
@@ -77,9 +88,9 @@ class AIPlayer {
       }
     }
 
-    // 10% imperfection: pick second-best
+    // Imperfection based on difficulty
     let chosen;
-    if (Math.random() < 0.1 && secondSeqs.length > 0 && secondBest > -Infinity) {
+    if (Math.random() < this.randomChance && secondSeqs.length > 0 && secondBest > -Infinity) {
       chosen = secondSeqs[Math.floor(Math.random() * secondSeqs.length)];
     } else {
       chosen = bestSeqs[Math.floor(Math.random() * bestSeqs.length)];

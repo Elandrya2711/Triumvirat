@@ -22,7 +22,13 @@
           <button class="count-btn" data-count="3">3 Spieler</button>
         </div>
         <button id="create-btn" class="primary-btn">Spiel erstellen</button>
-        <button id="ai-btn" class="primary-btn ai-btn">🤖 vs KI spielen</button>
+        <div id="ai-section" class="ai-section">
+          <div class="difficulty-slider">
+            <label>KI-Schwierigkeit: <span id="diff-label">Mittel ⭐⭐⭐</span></label>
+            <input type="range" id="difficulty" min="1" max="5" value="3" step="1">
+          </div>
+          <button id="ai-btn" class="primary-btn ai-btn">🤖 vs KI spielen</button>
+        </div>
       </div>
 
       <div class="lobby-section">

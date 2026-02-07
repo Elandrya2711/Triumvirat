@@ -27,10 +27,11 @@ io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
 
   // Create a new game
-  socket.on('create-game', ({ playerName, numPlayers, vsAI }) => {
+  socket.on('create-game', ({ playerName, numPlayers, vsAI, difficulty }) => {
     const gameId = uuidv4().substring(0, 8);
-    const effectivePlayers = vsAI ? 2 : (numPlayers || 3);
+    const effectivePlayers = vsAI ? (numPlayers || 2) : (numPlayers || 3);
     const game = new Game(effectivePlayers);
+    const diff = Math.max(1, Math.min(5, difficulty || 3));
     
     const room = {
       game,
@@ -38,13 +39,20 @@ io.on('connection', (socket) => {
       players: [{ id: socket.id, name: playerName || 'Spieler 1', index: 0 }],
       started: false,
       vsAI: !!vsAI,
-      ai: null
+      ai: null,
+      aiPlayers: [] // array of AIPlayer instances
     };
 
     if (vsAI) {
-      const ai = new AIPlayer(1, '🤖 Mako-Bot');
-      room.ai = ai;
-      room.players.push({ id: 'ai', name: ai.name, index: 1 });
+      const numAI = effectivePlayers - 1;
+      for (let i = 0; i < numAI; i++) {
+        const name = numAI > 1 ? `🤖 Mako-Bot ${i + 1}` : '🤖 Mako-Bot';
+        const ai = new AIPlayer(i + 1, name, diff);
+        room.aiPlayers.push(ai);
+        room.players.push({ id: `ai-${i}`, name: ai.name, index: i + 1 });
+      }
+      // Keep legacy .ai for backwards compat
+      room.ai = room.aiPlayers[0];
     }
 
     games.set(gameId, room);
@@ -179,7 +187,7 @@ io.on('connection', (socket) => {
         state: room.game.getState()
       });
     } else if (room.vsAI && result.chainActive === null) {
-      executeAITurn(socket.gameId);
+      executeAITurns(socket.gameId);
     }
   });
 
@@ -205,7 +213,7 @@ io.on('connection', (socket) => {
 
     // Trigger AI turn after human ends chain
     if (room.vsAI) {
-      executeAITurn(socket.gameId);
+      executeAITurns(socket.gameId);
     }
   });
 
@@ -227,20 +235,29 @@ io.on('connection', (socket) => {
   });
 });
 
-// AI turn execution
-function executeAITurn(gameId) {
-  const room = games.get(gameId);
-  if (!room || !room.vsAI || !room.ai || room.game.gameOver) return;
-  if (room.game.currentPlayer !== room.ai.playerIndex) return;
+// Find the AI player for the current turn
+function getActiveAI(room) {
+  const currentPlayer = room.game.currentPlayer;
+  return room.aiPlayers.find(ai => ai.playerIndex === currentPlayer) || null;
+}
 
-  const delay = 1000 + Math.random() * 1000; // 1-2 seconds
+// Execute AI turns - will chain through multiple AIs if needed
+function executeAITurns(gameId) {
+  const room = games.get(gameId);
+  if (!room || !room.vsAI || room.game.gameOver) return;
+  
+  const ai = getActiveAI(room);
+  if (!ai) return; // It's the human's turn
+
+  const delay = 1000 + Math.random() * 1000;
 
   setTimeout(() => {
     const room = games.get(gameId);
     if (!room || room.game.gameOver) return;
-    if (room.game.currentPlayer !== room.ai.playerIndex) return;
+    const ai = getActiveAI(room);
+    if (!ai) return;
 
-    const move = room.ai.chooseMove(room.game);
+    const move = ai.chooseMove(room.game);
     if (!move) return;
 
     const result = room.game.makeMove(move.from, move.to);
@@ -265,9 +282,11 @@ function executeAITurn(gameId) {
       return;
     }
 
-    // Handle chain jumps
     if (result.chainActive !== null && result.chainActive !== undefined) {
       executeAIChain(gameId);
+    } else {
+      // After this AI's turn, check if next player is also an AI
+      executeAITurns(gameId);
     }
   }, delay);
 }
@@ -278,13 +297,15 @@ function executeAIChain(gameId) {
   setTimeout(() => {
     const room = games.get(gameId);
     if (!room || room.game.gameOver || room.game.chainActive === null) return;
-    if (room.game.currentPlayer !== room.ai.playerIndex) return;
+    const ai = getActiveAI(room);
+    if (!ai) return;
 
-    const cont = room.ai.chooseContinuation(room.game);
+    const cont = ai.chooseContinuation(room.game);
     if (!cont) {
-      // End turn
       room.game.endTurn();
       io.to(gameId).emit('turn-ended', { state: room.game.getState() });
+      // After ending chain, check if next player is also AI
+      executeAITurns(gameId);
       return;
     }
 
@@ -292,6 +313,7 @@ function executeAIChain(gameId) {
     if (!result.valid) {
       room.game.endTurn();
       io.to(gameId).emit('turn-ended', { state: room.game.getState() });
+      executeAITurns(gameId);
       return;
     }
 
@@ -316,6 +338,8 @@ function executeAIChain(gameId) {
 
     if (result.chainActive !== null && result.chainActive !== undefined) {
       executeAIChain(gameId);
+    } else {
+      executeAITurns(gameId);
     }
   }, chainDelay);
 }
