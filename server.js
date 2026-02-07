@@ -69,7 +69,7 @@ io.on('connection', (socket) => {
     
     const gameId = uuidv4().substring(0, 8);
     const isSpectate = !!spectate;
-    const effectivePlayers = isSpectate ? 3 : (vsAI ? numPlayers : numPlayers);
+    const effectivePlayers = numPlayers || 3;
     const game = new Game(effectivePlayers);
     const diff = difficulty;
     
