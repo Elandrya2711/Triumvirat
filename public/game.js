@@ -1291,6 +1291,12 @@ function soloMakeMove(from, to) {
     chainActive = result.chainActive;
     const jumps = soloGame.getContinuationJumps(chainActive);
     validTargets = jumps.map(m => m.to);
+    if (validTargets.length === 0) {
+      // No further jumps possible — auto-end turn
+      soloGame.endTurn();
+      gameState = soloGame.getState();
+      chainActive = null;
+    }
     updateEndTurnButton();
   } else {
     chainActive = null;
