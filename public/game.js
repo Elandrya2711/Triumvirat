@@ -472,12 +472,12 @@ function updateTurnDisplay() {
   turnEl.style.background = color;
   turnEl.style.color = '#fff';
   
-  // Marble counts
+  // Marble counts with names
   const countsEl = document.getElementById('marble-counts');
   countsEl.innerHTML = gameState.marbleCount.map((c, i) => 
     `<div class="marble-count">
       <span class="marble-dot" style="background:${colors[i]}"></span>
-      <span>${c}</span>
+      <span>${playerNames[i] || 'Spieler ' + (i+1)}: ${c}</span>
     </div>`
   ).join('');
 }
@@ -659,6 +659,7 @@ socket.on('player-joined', (data) => {
 
 socket.on('game-start', (data) => {
   gameState = data.state;
+  if (data.players) playerNames = data.players.map(p => p.name);
   showScreen('game');
   resizeCanvas();
   updateTurnDisplay();
@@ -797,7 +798,7 @@ socket.on('reconnected', (data) => {
   boardLayout = data.boardLayout;
   adjacency = data.adjacency;
   colors = data.colors;
-  playerNames = data.playerNames;
+  playerNames = data.actualNames || data.playerNames;
   gameState = data.state;
   chainActive = data.state.chainActive || null;
   

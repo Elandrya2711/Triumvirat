@@ -258,6 +258,7 @@ io.on('connection', (socket) => {
         adjacency: ADJACENCY,
         colors: PLAYER_COLORS,
         playerNames: PLAYER_NAMES,
+        actualNames: room.players.sort((a,b) => a.index - b.index).map(p => p.name),
         state: room.game.getState()
       });
       console.log(`Spectator reconnected to game ${gameId}`);
@@ -286,6 +287,7 @@ io.on('connection', (socket) => {
       adjacency: ADJACENCY,
       colors: PLAYER_COLORS,
       playerNames: PLAYER_NAMES,
+      actualNames: room.players.sort((a,b) => a.index - b.index).map(p => p.name),
       state: room.game.getState()
     });
     
