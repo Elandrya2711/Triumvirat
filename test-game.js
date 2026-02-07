@@ -258,6 +258,31 @@ test('_advanceTurn clears cornerForced when not landing in corner', () => {
   assert(g.cornerForced[0] === undefined, 'Should clear cornerForced for player 0');
 });
 
+// === CORNER RULES (official) ===
+
+test('Simple moves cannot target corners', () => {
+  const g = new Game(3);
+  g.board.fill(null);
+  // Place marble adjacent to corner 21 (bottom-left)
+  g.board[15] = { player: 0, size: 1 };
+  g.currentPlayer = 0;
+  const moves = g.getValidMoves(15);
+  const simpleToCorner = moves.filter(m => !m.isJump && CORNERS.includes(m.to));
+  assert(simpleToCorner.length === 0, 'Simple moves must not target corners');
+});
+
+test('Jumps CAN land in corners', () => {
+  const g = new Game(3);
+  g.board.fill(null);
+  // Setup: marble at 10, enemy at 15, corner 21 empty → jump to 21
+  g.board[10] = { player: 0, size: 3 };
+  g.board[15] = { player: 1, size: 1 };
+  g.currentPlayer = 0;
+  const moves = g.getValidMoves(10);
+  const jumpToCorner = moves.find(m => m.isJump && m.to === 21);
+  assert(jumpToCorner !== undefined, 'Jumps should be allowed to land in corners');
+});
+
 // === AI CLONE BUG ===
 
 test('AI _cloneGame deep-copies cornerForced', () => {
