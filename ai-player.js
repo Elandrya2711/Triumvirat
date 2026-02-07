@@ -29,7 +29,7 @@ const DIFFICULTY_SETTINGS = {
   2: { name: 'Leicht',      randomChance: 0.25, searchDepth: 2 },
   3: { name: 'Mittel',      randomChance: 0.10, searchDepth: 3 },
   4: { name: 'Schwer',      randomChance: 0.03, searchDepth: 4 },
-  5: { name: 'Unbesiegbar', randomChance: 0.00, searchDepth: 5 },
+  5: { name: 'Unbesiegbar', randomChance: 0.00, searchDepth: 6 },
 };
 
 class AIPlayer {
@@ -278,9 +278,18 @@ class AIPlayer {
 
     // Game over bonus
     if (game.gameOver) {
-      if (game.winner === me) score += 500;
-      else score -= 500;
+      if (game.winner === me) score += 1000;
+      else score -= 1000;
     }
+
+    // Count marbles — reward having more, penalize opponent having more
+    const counts = game._getMarbleCounts();
+    const myCount = counts[me] || 0;
+    let enemyMax = 0;
+    for (let p = 0; p < game.numPlayers; p++) {
+      if (p !== me) enemyMax = Math.max(enemyMax, counts[p] || 0);
+    }
+    score += (myCount - enemyMax) * 15;
 
     return score;
   }
@@ -349,6 +358,7 @@ class AIPlayer {
     ng.moveHistory = []; // Don't need history for simulation
     ng.chainActive = game.chainActive;
     ng.lastJumpedOver = game.lastJumpedOver;
+    ng.cornerForced = game.cornerForced;
     return ng;
   }
 
