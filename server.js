@@ -257,11 +257,25 @@ function executeAITurns(gameId) {
     const ai = getActiveAI(room);
     if (!ai) return;
 
-    const move = ai.chooseMove(room.game);
-    if (!move) return;
+    let move;
+    try {
+      move = ai.chooseMove(room.game);
+    } catch (err) {
+      console.error('AI chooseMove error:', err.message);
+      // Fallback: pick random valid move
+      const fallbackMoves = room.game.getValidMoves();
+      move = fallbackMoves.length > 0 ? fallbackMoves[0] : null;
+    }
+    if (!move) {
+      console.error('AI has no moves! Player:', room.game.currentPlayer);
+      return;
+    }
 
     const result = room.game.makeMove(move.from, move.to);
-    if (!result.valid) return;
+    if (!result.valid) {
+      console.error('AI made invalid move:', move, result.error);
+      return;
+    }
 
     io.to(gameId).emit('move-made', {
       from: move.from,
@@ -300,7 +314,13 @@ function executeAIChain(gameId) {
     const ai = getActiveAI(room);
     if (!ai) return;
 
-    const cont = ai.chooseContinuation(room.game);
+    let cont;
+    try {
+      cont = ai.chooseContinuation(room.game);
+    } catch (err) {
+      console.error('AI chooseContinuation error:', err.message);
+      cont = null;
+    }
     if (!cont) {
       room.game.endTurn();
       io.to(gameId).emit('turn-ended', { state: room.game.getState() });
