@@ -37,8 +37,10 @@ function registerSocketEvent(event, handler) {
   gameEventListeners.push({ event, handler });
 }
 
-// Issue #4 & #12: Reset game state (keep socket listeners — they're global)
+// Issue #4 & #12: Reset game state (listeners are persistent per page session — that's OK)
 function cleanupGameEvents() {
+  // Note: Socket event listeners are registered once at script load and remain persistent.
+  // This is correct behavior — they check gameId internally.
   animQueue = [];
   animLock = false;
   animating = false;
@@ -898,8 +900,15 @@ function processAnimQueue() {
 // Issue #6: Updated to use queue with lock
 const handleMoveEvent = (data) => {
   if (!gameId) return;  // Not in a game
+  // Issue BUG-2: Prevent unbounded queue growth
+  if (animQueue.length > 50) {
+    console.warn('Animation queue overflow, clearing');
+    animQueue = animQueue.slice(-10); // Keep last 10
+  }
+  const wasEmpty = animQueue.length === 0;
   animQueue.push(data);
-  if (!animLock) {
+  // Issue BUG-1: Fixed race condition
+  if (wasEmpty && !animLock) {
     processAnimQueue();
   }
 };
@@ -1069,7 +1078,14 @@ registerSocketEvent('player-disconnected', (data) => {
 
 // Connection lost indicator
 socket.on('disconnect', () => {
+  // Issue UX-1: Cancel running animations to prevent frozen state
+  animationData = null;
+  animating = false;
+  animLock = false;
+  animQueue = [];
+  
   if (document.getElementById('game').classList.contains('active')) {
+    render(); // Update display to show current state
     showToast('🔌 Verbindung verloren — versuche Neuverbindung...');
   }
 });

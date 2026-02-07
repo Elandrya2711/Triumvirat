@@ -20,9 +20,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Active games: gameId -> { game, players: [{id, name, socketId}], spectators: [] }
 const games = new Map();
 
-// Rate limiting for game creation
+// Rate limiting for game creation and joining
 const createGameLimits = new Map(); // socket.id → { count, resetTime }
+const joinGameLimits = new Map(); // Issue SEC-2: Rate limit join attempts
 const MAX_GAMES_PER_MINUTE = 5;
+const MAX_JOINS_PER_MINUTE = 20;
 
 // Input sanitization helpers
 function sanitizeString(str, maxLen = 20, fallback = '') {
@@ -147,6 +149,23 @@ io.on('connection', (socket) => {
 
   // Join existing game
   socket.on('join-game', ({ gameId, playerName }) => {
+    // Issue SEC-2: Rate limiting for join attempts
+    const now = Date.now();
+    const limit = joinGameLimits.get(socket.id) || { count: 0, resetTime: now + 60000 };
+    
+    if (now > limit.resetTime) {
+      limit.count = 0;
+      limit.resetTime = now + 60000;
+    }
+    
+    if (limit.count >= MAX_JOINS_PER_MINUTE) {
+      socket.emit('error-msg', { message: 'Zu viele Join-Versuche. Bitte warte einen Moment.' });
+      return;
+    }
+    
+    limit.count++;
+    joinGameLimits.set(socket.id, limit);
+    
     // Input validation (Issue #3)
     gameId = sanitizeString(gameId, 12, '');
     playerName = sanitizeString(playerName, 20, 'Spieler');
@@ -423,8 +442,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    // Cleanup rate limiter (Issue #13)
+    // Cleanup rate limiters (Issue #13, SEC-2)
     createGameLimits.delete(socket.id);
+    joinGameLimits.delete(socket.id);
     
     if (socket.gameId) {
       const room = games.get(socket.gameId);
@@ -451,13 +471,18 @@ io.on('connection', (socket) => {
   });
 });
 
+// Issue CODE-2: Structured AI error logging
+function logAIError(gameId, playerIndex, error, context) {
+  console.error(`[AI ERROR] Game ${gameId}, Player ${playerIndex}: ${error} (${context})`);
+}
+
 // Find the AI player for the current turn (Issue #11: Error logging)
-function getActiveAI(room) {
+function getActiveAI(room, gameId) {
   const currentPlayer = room.game.currentPlayer;
   const ai = room.aiPlayers.find(ai => ai.playerIndex === currentPlayer) || null;
   
   if (ai === null && room.vsAI) {
-    console.error(`⚠️ Expected AI for player ${currentPlayer} but none found! aiPlayers: [${room.aiPlayers.map(a => a.playerIndex)}]`);
+    logAIError(gameId, currentPlayer, `Expected AI but none found! aiPlayers: [${room.aiPlayers.map(a => a.playerIndex)}]`, 'getActiveAI');
   }
   
   return ai;
@@ -468,19 +493,21 @@ function executeAITurns(gameId) {
   const room = games.get(gameId);
   if (!room || !room.vsAI || room.game.gameOver || room.aiExecuting) return;
   
-  const ai = getActiveAI(room);
+  const ai = getActiveAI(room, gameId);
   if (!ai) return; // It's the human's turn
 
   room.aiExecuting = true; // Issue #2: Set lock
   const delay = 1000 + Math.random() * 1000;
 
   setTimeout(() => {
+    // Issue BUG-5: Check if game still exists (could be deleted by cleanup)
+    if (!games.has(gameId)) return;
     const room = games.get(gameId);
     if (!room || room.game.gameOver) {
       if (room) room.aiExecuting = false;
       return;
     }
-    const ai = getActiveAI(room);
+    const ai = getActiveAI(room, gameId);
     if (!ai) {
       room.aiExecuting = false;
       return;
@@ -490,13 +517,13 @@ function executeAITurns(gameId) {
     try {
       move = ai.chooseMove(room.game);
     } catch (err) {
-      console.error('AI chooseMove error:', err.message);
+      logAIError(gameId, ai.playerIndex, err.message, 'chooseMove');
       // Fallback: pick random valid move
       const fallbackMoves = room.game.getValidMoves();
       move = fallbackMoves.length > 0 ? fallbackMoves[0] : null;
     }
     if (!move) {
-      console.error('AI has no moves! Player:', room.game.currentPlayer);
+      logAIError(gameId, room.game.currentPlayer, 'No moves available', 'chooseMove');
       room.aiExecuting = false;
       return;
     }
@@ -505,7 +532,7 @@ function executeAITurns(gameId) {
     
     const result = room.game.makeMove(move.from, move.to);
     if (!result.valid) {
-      console.error('AI made invalid move:', move, result.error);
+      logAIError(gameId, ai.playerIndex, `Invalid move ${move.from}→${move.to}: ${result.error}`, 'makeMove');
       room.aiExecuting = false;
       return;
     }
@@ -549,12 +576,14 @@ function executeAIChain(gameId) {
   const chainDelay = 800 + Math.random() * 700;
 
   setTimeout(() => {
+    // Issue BUG-5: Check if game still exists (could be deleted by cleanup)
+    if (!games.has(gameId)) return;
     const room = games.get(gameId);
     if (!room || room.game.gameOver || room.game.chainActive === null) {
       if (room) room.aiExecuting = false;
       return;
     }
-    const ai = getActiveAI(room);
+    const ai = getActiveAI(room, gameId);
     if (!ai) {
       room.aiExecuting = false;
       return;
@@ -564,7 +593,7 @@ function executeAIChain(gameId) {
     try {
       cont = ai.chooseContinuation(room.game);
     } catch (err) {
-      console.error('AI chooseContinuation error:', err.message);
+      logAIError(gameId, ai.playerIndex, err.message, 'chooseContinuation');
       cont = null;
     }
     if (!cont) {

@@ -141,10 +141,48 @@ class Game {
   }
 
   _getMarbleCounts() {
+    // Issue PERF-1: Use playerMarbles tracking with auto-sync fallback
     const counts = new Array(this.numPlayers).fill(0);
-    for (const cell of this.board) {
-      if (cell) counts[cell.player]++;
+    
+    // Validate playerMarbles consistency (for tests that manipulate board directly)
+    if (this.playerMarbles && Object.keys(this.playerMarbles).length === this.numPlayers) {
+      let valid = true;
+      for (let p = 0; p < this.numPlayers; p++) {
+        if (!Array.isArray(this.playerMarbles[p])) {
+          valid = false;
+          break;
+        }
+        // Quick validation: check if positions in tracking actually have player's marbles
+        for (const pos of this.playerMarbles[p]) {
+          if (!this.board[pos] || this.board[pos].player !== p) {
+            valid = false;
+            break;
+          }
+        }
+        if (!valid) break;
+      }
+      
+      if (valid) {
+        // Fast path: use playerMarbles (validated)
+        for (let p = 0; p < this.numPlayers; p++) {
+          counts[p] = this.playerMarbles[p].length;
+        }
+        return counts;
+      }
     }
+    
+    // Fallback: rebuild playerMarbles from board (for tests or inconsistent state)
+    for (let p = 0; p < this.numPlayers; p++) {
+      this.playerMarbles[p] = [];
+    }
+    for (let i = 0; i < this.board.length; i++) {
+      const cell = this.board[i];
+      if (cell) {
+        counts[cell.player]++;
+        this.playerMarbles[cell.player].push(i);
+      }
+    }
+    
     return counts;
   }
 

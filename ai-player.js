@@ -43,6 +43,7 @@ class AIPlayer {
     this.maxDepth = settings.searchDepth;
     this.moveHistory = [];  // Track last N moves to detect repetition
     this.transpositionTable = new Map(); // Issue #7: Minimax caching for performance
+    this.lastCacheClear = Date.now(); // Issue BUG-4: Track last cache clear time
   }
 
   chooseMove(game) {
@@ -283,9 +284,11 @@ class AIPlayer {
       }
       // Issue #7: Cache result before returning
       this.transpositionTable.set(hash, { score: maxEval, depth });
-      // Clear cache if too large (memory management)
-      if (this.transpositionTable.size > 10000) {
+      // Issue BUG-4: Clear cache if too large OR too old (memory management)
+      const now = Date.now();
+      if (this.transpositionTable.size > 10000 || (now - this.lastCacheClear > 30000)) {
         this.transpositionTable.clear();
+        this.lastCacheClear = now;
       }
       return maxEval;
     } else {
@@ -298,9 +301,11 @@ class AIPlayer {
       }
       // Issue #7: Cache result before returning
       this.transpositionTable.set(hash, { score: minEval, depth });
-      // Clear cache if too large (memory management)
-      if (this.transpositionTable.size > 10000) {
+      // Issue BUG-4: Clear cache if too large OR too old (memory management)
+      const now = Date.now();
+      if (this.transpositionTable.size > 10000 || (now - this.lastCacheClear > 30000)) {
         this.transpositionTable.clear();
+        this.lastCacheClear = now;
       }
       return minEval;
     }
