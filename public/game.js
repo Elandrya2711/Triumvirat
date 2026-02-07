@@ -17,96 +17,6 @@ let selectedPos = null;
 let validTargets = [];
 let animating = false;
 let chainActive = null; // position of marble in active chain jump
-const CORNERS = [0, 21, 27];
-
-// Client-side move calculation (avoids server roundtrip for highlighting)
-function getLocalValidMoves(from) {
-  if (!gameState || !adjacency.length) return [];
-  const board = gameState.board;
-  const cell = board[from];
-  if (!cell || cell.player !== myPlayerIndex) return [];
-  
-  const moves = [];
-  
-  // If chain is active, only continuation jumps
-  if (chainActive !== null) {
-    if (from !== chainActive) return [];
-    return getLocalContinuationJumps(from);
-  }
-  
-  // Check if forced corner marble
-  // (We approximate: if this player has a marble on a corner, only that marble can move)
-  let forcedCorner = null;
-  for (const c of CORNERS) {
-    if (board[c] && board[c].player === gameState.currentPlayer) {
-      forcedCorner = c;
-      break;
-    }
-  }
-  if (forcedCorner !== null && from !== forcedCorner) return [];
-  
-  // Simple moves
-  for (const adj of adjacency[from]) {
-    if (!board[adj] && !CORNERS.includes(adj)) {
-      moves.push(adj);
-    }
-  }
-  
-  // Jumps
-  for (const adj of adjacency[from]) {
-    const target = board[adj];
-    if (!target) continue;
-    if (target.size > cell.size) continue;
-    const landing = getJumpLanding(from, adj);
-    if (landing < 0 || landing >= board.length) continue;
-    if (board[landing]) continue;
-    moves.push(landing);
-  }
-  
-  return moves;
-}
-
-function getLocalContinuationJumps(from) {
-  if (!gameState) return [];
-  const board = gameState.board;
-  const cell = board[from];
-  if (!cell) return [];
-  const moves = [];
-  for (const adj of adjacency[from]) {
-    const target = board[adj];
-    if (!target) continue;
-    if (target.size > cell.size) continue;
-    const landing = getJumpLanding(from, adj);
-    if (landing < 0 || landing >= board.length) continue;
-    if (board[landing]) continue;
-    moves.push(landing);
-  }
-  return moves;
-}
-
-function getJumpLanding(from, over) {
-  // Calculate landing position based on row/col arithmetic
-  const frc = idxToRC(from), orc = idxToRC(over);
-  if (!frc || !orc) return -1;
-  const dr = orc.row - frc.row, dc = orc.col - frc.col;
-  return rcToIdx(orc.row + dr, orc.col + dc);
-}
-
-function idxToRC(idx) {
-  let count = 0;
-  for (let row = 0; row < 7; row++) {
-    for (let col = 0; col <= row; col++) {
-      if (count === idx) return { row, col };
-      count++;
-    }
-  }
-  return null;
-}
-
-function rcToIdx(row, col) {
-  if (row < 0 || row >= 7 || col < 0 || col > row) return -1;
-  return (row * (row + 1)) / 2 + col;
-}
 
 // Animation state
 let animationData = null;
@@ -704,11 +614,12 @@ function handleClick(e) {
     return;
   }
   
-  // If clicking own marble, select it (local move calc — no server roundtrip)
+  // If clicking own marble, select it
   const cell = gameState.board[pos];
   if (cell && cell.player === myPlayerIndex) {
     selectedPos = pos;
-    validTargets = getLocalValidMoves(pos);
+    validTargets = [];
+    socket.emit('get-moves', { from: pos });
     render();
     return;
   }
