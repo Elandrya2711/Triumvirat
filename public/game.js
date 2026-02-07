@@ -1210,13 +1210,11 @@ function soloMakeMove(from, to) {
     return;
   }
   
-  // Record trail
-  const player = gameState.currentPlayer;
-  moveTrails[player] = moveTrails[player] || [];
-  moveTrails[player].push({ from, to });
+  // Record trail — gameState still has OLD state (before makeMove), so currentPlayer is correct
+  const movingPlayer = gameState.currentPlayer;
+  moveTrails[movingPlayer] = moveTrails[movingPlayer] || [];
+  moveTrails[movingPlayer].push({ from, to });
   
-  // Animate
-  const prevState = gameState;
   gameState = soloGame.getState();
   
   // Run animation
@@ -1232,7 +1230,7 @@ function soloMakeMove(from, to) {
     chainActive = null;
     updateEndTurnButton();
     // Clear trails for the current player (move complete)
-    moveTrails[player] = [{ from, to }];
+    moveTrails[movingPlayer] = [{ from, to }];
   }
   
   render();
@@ -1436,7 +1434,6 @@ function soloShowGameOver() {
 }
 
 // Override surrender for solo mode
-const origSurrenderHandler = document.getElementById('surrender-btn').onclick;
 document.getElementById('surrender-btn').addEventListener('click', (e) => {
   if (!soloMode || !soloGame) return; // let original handler run
   e.stopImmediatePropagation();
