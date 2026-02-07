@@ -408,6 +408,14 @@ io.on('connection', (socket) => {
   socket.on('leave-game', () => {
     const gid = socket.gameId;
     if (!gid) return;
+    
+    // Issue #14: Remove spectator from room.spectators to prevent memory leak
+    const room = games.get(gid);
+    if (room && room.spectators) {
+      const idx = room.spectators.indexOf(socket.id);
+      if (idx >= 0) room.spectators.splice(idx, 1);
+    }
+    
     socket.leave(gid);
     socket.gameId = null;
     socket.playerIndex = null;

@@ -690,7 +690,13 @@ document.getElementById('spectate-btn').addEventListener('click', () => {
   socket.emit('create-game', { playerName: 'Zuschauer', numPlayers, spectate: true, difficulty });
 });
 
-// Speed slider removed
+// Rules popup
+function showRules() { document.getElementById('rules-overlay').classList.remove('hidden'); }
+document.getElementById('rules-btn').addEventListener('click', showRules);
+document.getElementById('rules-btn-game').addEventListener('click', showRules);
+document.getElementById('close-rules-btn').addEventListener('click', () => {
+  document.getElementById('rules-overlay').classList.add('hidden');
+});
 
 document.getElementById('join-btn').addEventListener('click', () => {
   const name = document.getElementById('join-name').value.trim() || 'Spieler';
@@ -893,6 +899,9 @@ function handleMoveMade(data, onComplete) {
   const movingMarble = oldBoard ? oldBoard[data.from] : null;
   
   function applyMoveState() {
+    // Issue #14: Prevent state restoration after surrender during animation
+    if (!gameId) return; // Game was left during animation, ignore state update
+    
     gameState = data.state;
     
     if (data.chainActive !== null && data.chainActive !== undefined) {

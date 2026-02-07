@@ -329,6 +329,24 @@ canvas {
 }
 
 /* Toast */
+.rules-content {
+  max-width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+  text-align: left;
+}
+.rules-content h2 { text-align: center; }
+.rules-text h3 {
+  color: var(--gold);
+  font-family: 'Cinzel', serif;
+  margin-top: 18px;
+  margin-bottom: 6px;
+  font-size: 1.1em;
+}
+.rules-text p { margin-bottom: 8px; line-height: 1.5; color: var(--parchment-dark); }
+.rules-text ul { margin: 6px 0 10px 20px; color: var(--parchment-dark); line-height: 1.6; }
+.rules-text strong { color: var(--parchment); }
+
 .toast {
   position: fixed;
   bottom: 30px;

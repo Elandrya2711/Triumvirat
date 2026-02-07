@@ -12,6 +12,7 @@
     <div class="lobby-container">
       <h1>⚔️ Triumvirat</h1>
       <p class="subtitle">Ein taktisches Kugelspiel für 2-3 Spieler</p>
+      <button id="rules-btn" class="secondary-btn" style="margin-bottom:15px">📜 Regeln</button>
       
       <div class="lobby-section">
         <h2>Neues Spiel erstellen</h2>
@@ -72,6 +73,7 @@
     <div class="end-turn-container">
       <button id="end-turn-btn" class="end-turn-btn hidden">✋ Zug beenden</button>
       <button id="surrender-btn" class="surrender-btn">🏳️ Aufgeben</button>
+      <button id="rules-btn-game" class="surrender-btn">📜 Regeln</button>
     </div>
     <div id="game-status" class="game-status"></div>
     <div id="game-over-overlay" class="overlay hidden">
@@ -79,6 +81,47 @@
         <h2 id="winner-text"></h2>
         <button id="new-game-btn" class="primary-btn">Neues Spiel</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Rules overlay -->
+  <div id="rules-overlay" class="overlay hidden">
+    <div class="overlay-content rules-content">
+      <h2>📜 Spielregeln</h2>
+      <div class="rules-text">
+        <h3>Ziel</h3>
+        <p>Schlage die Kugeln deiner Gegner vom Brett! Das Spiel endet, wenn ein Spieler nur noch <strong>eine Kugel</strong> übrig hat. Der Spieler mit den <strong>meisten Kugeln</strong> gewinnt.</p>
+        
+        <h3>Aufbau</h3>
+        <p>Jeder Spieler hat <strong>6 Kugeln</strong> in einer Ecke des dreieckigen Bretts:</p>
+        <ul>
+          <li>🔴 <strong>1 große</strong> Kugel (Ecke)</li>
+          <li>🔴 <strong>2 mittlere</strong> Kugeln</li>
+          <li>🔴 <strong>3 kleine</strong> Kugeln</li>
+        </ul>
+        
+        <h3>Züge</h3>
+        <p><strong>Ziehen:</strong> Eine eigene Kugel auf ein benachbartes freies Feld bewegen.</p>
+        <p><strong>Springen:</strong> Über eine benachbarte Kugel auf das Feld dahinter springen — aber nur über <strong>gleich große oder kleinere</strong> Kugeln.</p>
+        
+        <h3>Schlagen</h3>
+        <p>Springst du über eine <strong>gegnerische</strong> Kugel, wird sie vom Brett genommen! Über <strong>eigene</strong> Kugeln kannst du springen, ohne sie zu verlieren.</p>
+        
+        <h3>Kettensprünge</h3>
+        <p>Nach einem Sprung kannst du <strong>weiter springen</strong> — solange gültige Sprünge möglich sind. Du kannst die Kette jederzeit mit <strong>„Zug beenden"</strong> stoppen.</p>
+        
+        <h3>Eckfelder</h3>
+        <p>Die drei Eckfelder dürfen <strong>nur durch Springen</strong> erreicht werden (nicht durch normales Ziehen). Eine Kugel in einer Ecke <strong>muss im nächsten Zug</strong> wieder herausgezogen werden.</p>
+        
+        <h3>Kugelgrößen</h3>
+        <p>Die Größe bestimmt, über wen du springen darfst:</p>
+        <ul>
+          <li><strong>Große Kugel</strong> — springt über alle</li>
+          <li><strong>Mittlere Kugel</strong> — springt über mittlere und kleine</li>
+          <li><strong>Kleine Kugel</strong> — springt nur über kleine</li>
+        </ul>
+      </div>
+      <button id="close-rules-btn" class="primary-btn" style="margin-top:20px">Verstanden!</button>
     </div>
   </div>
 
