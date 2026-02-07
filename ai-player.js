@@ -40,6 +40,7 @@ class AIPlayer {
     const settings = DIFFICULTY_SETTINGS[this.difficulty];
     this.randomChance = settings.randomChance;
     this.maxDepth = settings.searchDepth;
+    this.moveHistory = [];  // Track last N moves to detect repetition
   }
 
   chooseMove(game) {
@@ -88,13 +89,39 @@ class AIPlayer {
       }
     }
 
+    // Apply repetition penalty — discount sequences that repeat recent moves
+    const scored = [];
+    for (const seq of [bestSeqs, secondSeqs].flat()) {
+      const firstMove = seq[0];
+      const moveKey = `${firstMove.from}-${firstMove.to}`;
+      const reverseKey = `${firstMove.to}-${firstMove.from}`;
+      let penalty = 0;
+      // Check last 6 moves for this AI
+      for (let i = this.moveHistory.length - 1; i >= Math.max(0, this.moveHistory.length - 6); i--) {
+        if (this.moveHistory[i] === moveKey || this.moveHistory[i] === reverseKey) {
+          penalty += 25;  // Heavy penalty for repeating/reversing recent moves
+        }
+      }
+      // Re-evaluate with penalty
+      const simGame = this._cloneGame(game);
+      this._applySequence(simGame, seq);
+      const baseScore = this._minimax(simGame, this.maxDepth - 1, -Infinity, Infinity, false);
+      scored.push({ seq, score: baseScore - penalty });
+    }
+    scored.sort((a, b) => b.score - a.score);
+
     // Imperfection based on difficulty
     let chosen;
-    if (Math.random() < this.randomChance && secondSeqs.length > 0 && secondBest > -Infinity) {
-      chosen = secondSeqs[Math.floor(Math.random() * secondSeqs.length)];
+    if (Math.random() < this.randomChance && scored.length > 1) {
+      chosen = scored[1].seq;
     } else {
-      chosen = bestSeqs[Math.floor(Math.random() * bestSeqs.length)];
+      chosen = scored[0].seq;
     }
+
+    // Record move in history
+    const firstMove = chosen[0];
+    this.moveHistory.push(`${firstMove.from}-${firstMove.to}`);
+    if (this.moveHistory.length > 12) this.moveHistory.shift();
 
     // Store the full chain plan for continuation
     this._plannedChain = chosen.slice(1);
