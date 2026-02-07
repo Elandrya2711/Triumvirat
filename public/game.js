@@ -1278,8 +1278,8 @@ function soloMakeMove(from, to) {
   
   // Record trail — gameState still has OLD state (before makeMove), so currentPlayer is correct
   const movingPlayer = gameState.currentPlayer;
-  moveTrails[movingPlayer] = moveTrails[movingPlayer] || [];
-  moveTrails[movingPlayer].push({ from, to });
+  moveTrails[movingPlayer] = moveTrails[movingPlayer] || { segments: [] };
+  moveTrails[movingPlayer].segments.push({ from, to });
   
   gameState = soloGame.getState();
   
@@ -1296,7 +1296,7 @@ function soloMakeMove(from, to) {
     chainActive = null;
     updateEndTurnButton();
     // Clear trails for the current player (move complete)
-    moveTrails[movingPlayer] = [{ from, to }];
+    moveTrails[movingPlayer] = { segments: [{ from, to }] };
   }
   
   render();
@@ -1380,7 +1380,7 @@ function handleAIWorkerMessage(e) {
     
     const movingMarble = soloGame.board[move.to]; // marble is at destination after makeMove
     const captures = result.captures || [];
-    moveTrails[player] = [{ from: move.from, to: move.to }];
+    moveTrails[player] = { segments: [{ from: move.from, to: move.to }] };
     gameState = soloGame.getState();
     
     // Animate the AI move
@@ -1434,8 +1434,8 @@ function handleAIWorkerMessage(e) {
     
     const contMarble = soloGame.board[msg.move.to];
     const contCaptures = result.captures || [];
-    moveTrails[player] = moveTrails[player] || [];
-    moveTrails[player].push({ from: msg.move.from, to: msg.move.to });
+    moveTrails[player] = moveTrails[player] || { segments: [] };
+    moveTrails[player].segments.push({ from: msg.move.from, to: msg.move.to });
     gameState = soloGame.getState();
     
     animateMove(msg.move.from, msg.move.to, contMarble, contCaptures, () => {
