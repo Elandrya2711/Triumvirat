@@ -750,12 +750,16 @@ document.getElementById('surrender-btn').addEventListener('click', () => {
 });
 
 document.getElementById('new-game-btn').addEventListener('click', () => {
+  if (gameId) socket.emit('leave-game');
   cleanupGameEvents(); // Issue #4: Cleanup events when leaving game
   document.getElementById('game-over-overlay').classList.add('hidden');
   showScreen('lobby');
+  gameId = null;
   gameState = null;
   selectedPos = null;
   validTargets = [];
+  chainActive = null;
+  moveTrails = {};
   localStorage.removeItem('triumvirat-session');
 });
 

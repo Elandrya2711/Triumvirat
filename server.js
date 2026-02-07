@@ -397,6 +397,9 @@ io.on('connection', (socket) => {
     }
     
     console.log(`Player ${surrenderedPlayer} surrendered in game ${socket.gameId}`);
+    socket.leave(socket.gameId);
+    socket.gameId = null;
+    socket.playerIndex = null;
   });
 
   // Leave game (spectator or player wanting to quit without surrender)
