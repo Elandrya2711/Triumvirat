@@ -360,7 +360,7 @@ class AIPlayer {
     ng.moveHistory = []; // Don't need history for simulation
     ng.chainActive = game.chainActive;
     ng.lastJumpedOver = game.lastJumpedOver;
-    ng.cornerForced = game.cornerForced;
+    ng.cornerForced = { ...game.cornerForced };
     return ng;
   }
 

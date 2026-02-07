@@ -258,6 +258,70 @@ test('_advanceTurn clears cornerForced when not landing in corner', () => {
   assert(g.cornerForced[0] === undefined, 'Should clear cornerForced for player 0');
 });
 
+// === AI CLONE BUG ===
+
+test('AI _cloneGame deep-copies cornerForced', () => {
+  const { AIPlayer } = require('./ai-player.js');
+  const ai = new AIPlayer(0, 'test', 1);
+  const g = new Game(3);
+  g.cornerForced[0] = 5;
+  const clone = ai._cloneGame(g);
+  clone.cornerForced[1] = 10;
+  assert(g.cornerForced[1] === undefined, 'Mutating clone should not affect original');
+});
+
+// === AI CAN PLAY FULL GAME ===
+
+test('3 AIs can play a full game without crashing', () => {
+  const { AIPlayer } = require('./ai-player.js');
+  const g = new Game(3);
+  const ais = [new AIPlayer(0, 'R', 1), new AIPlayer(1, 'B', 1), new AIPlayer(2, 'G', 1)];
+  let moves = 0;
+  const maxMoves = 300;
+  
+  while (!g.gameOver && moves < maxMoves) {
+    const ai = ais[g.currentPlayer];
+    const move = ai.chooseMove(g);
+    if (!move) {
+      // No moves available, skip
+      g.currentPlayer = (g.currentPlayer + 1) % 3;
+      moves++;
+      continue;
+    }
+    const result = g.makeMove(move.from, move.to);
+    assert(result.valid, `AI move ${moves} should be valid (player ${ai.playerIndex}: ${move.from}→${move.to})`);
+    
+    // Handle chain jumps
+    let chainSteps = 0;
+    while (result.chainActive !== null && g.chainActive !== null && chainSteps < 10) {
+      const cont = ai.chooseContinuation(g);
+      if (!cont) { g.endTurn(); break; }
+      const cr = g.makeMove(cont.from, cont.to);
+      if (!cr.valid) { g.endTurn(); break; }
+      if (cr.chainActive === null) break;
+      chainSteps++;
+    }
+    if (g.chainActive !== null) g.endTurn();
+    
+    moves++;
+  }
+  assert(moves < maxMoves, `Game should finish within ${maxMoves} moves (got ${moves})`);
+  if (g.gameOver) {
+    assert(g.winner >= 0 && g.winner <= 2, `Winner should be 0-2, got ${g.winner}`);
+  }
+});
+
+test('Each player has valid moves at start (AI perspective)', () => {
+  const { AIPlayer } = require('./ai-player.js');
+  const g = new Game(3);
+  for (let p = 0; p < 3; p++) {
+    g.currentPlayer = p;
+    const ai = new AIPlayer(p, 'test', 1);
+    const move = ai.chooseMove(g);
+    assert(move !== null, `AI player ${p} should find a move at game start`);
+  }
+});
+
 // === SUMMARY ===
 
 console.log(`\n${'='.repeat(40)}`);
