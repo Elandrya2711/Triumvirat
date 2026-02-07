@@ -72,8 +72,22 @@ let posCoords = [];
 
 function resizeCanvas() {
   const container = canvas.parentElement;
-  const w = Math.min(container.clientWidth, 600);
-  const h = w * 0.9;
+  let w = Math.min(container.clientWidth, 600);
+  let h = w * 0.9;
+  
+  // On mobile: also constrain by available height so board + UI fit without scroll
+  const gameScreen = document.getElementById('game');
+  if (gameScreen && gameScreen.classList.contains('active') && window.innerWidth <= 600) {
+    const header = document.querySelector('.game-header');
+    const footer = document.querySelector('.end-turn-container');
+    const status = document.querySelector('.game-status');
+    const usedH = (header?.offsetHeight || 0) + (footer?.offsetHeight || 0) + (status?.offsetHeight || 0) + 20;
+    const availH = window.innerHeight - usedH;
+    if (h > availH) {
+      h = availH;
+      w = h / 0.9;
+    }
+  }
   
   // Scale padding and marble sizes for small screens
   const scale = w / 600;

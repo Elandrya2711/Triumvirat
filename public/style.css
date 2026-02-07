@@ -368,9 +368,17 @@ canvas {
 .toast.hidden { opacity: 0; pointer-events: none; }
 
 @media (max-width: 600px) {
-  body { align-items: flex-start; padding-top: 10px; }
+  body { align-items: flex-start; padding: 5px 0 0; }
   
   h1 { font-size: 1.8em; letter-spacing: 1px; }
+  
+  /* Game screen: fill viewport, no scroll */
+  #game.active { 
+    justify-content: flex-start; 
+    height: 100dvh;
+    height: 100vh;
+    padding: 4px 6px;
+  }
   h2 { font-size: 1.1em; }
   .subtitle { font-size: 0.95em; margin-bottom: 15px; }
   
