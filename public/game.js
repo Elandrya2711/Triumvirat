@@ -1284,11 +1284,11 @@ function soloMakeMove(from, to) {
   gameState = soloGame.getState();
   
   // Run animation
-  selectedPos = null;
   validTargets = [];
   
   if (result.chainActive !== null && result.chainActive !== undefined) {
     chainActive = result.chainActive;
+    selectedPos = result.chainActive; // Show golden glow on active marble
     const jumps = soloGame.getContinuationJumps(chainActive);
     validTargets = jumps.map(m => m.to);
     if (validTargets.length === 0) {
@@ -1300,6 +1300,7 @@ function soloMakeMove(from, to) {
     updateEndTurnButton();
   } else {
     chainActive = null;
+    selectedPos = null;
     updateEndTurnButton();
     // Clear trails for the current player (move complete)
     moveTrails[movingPlayer] = { segments: [{ from, to }] };
