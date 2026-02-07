@@ -724,7 +724,10 @@ document.getElementById('ai-btn').addEventListener('click', () => {
   startSoloGame(name, numPlayers, difficulty);
 });
 
-// Spectate mode removed
+document.getElementById('spectate-btn').addEventListener('click', () => {
+  const difficulty = parseInt(diffSlider.value);
+  startSoloSpectate(numPlayers, difficulty);
+});
 
 // Rules popup
 function showRules() { document.getElementById('rules-overlay').classList.remove('hidden'); }
@@ -1182,6 +1185,69 @@ function startSoloGame(playerName, numP, difficulty) {
   document.getElementById('surrender-btn').textContent = '🏳️ Aufgeben';
   
   // Don't save to localStorage for solo games (no reconnect needed)
+}
+
+function startSoloSpectate(numP, difficulty) {
+  // Load game-logic if not yet loaded
+  if (!self.GameLogic) {
+    showToast('⏳ Lade Spiel-Logik...');
+    const s1 = document.createElement('script');
+    s1.src = '/game-logic.js';
+    s1.onload = () => {
+      const s2 = document.createElement('script');
+      s2.src = '/ai-player.js';
+      s2.onload = () => startSoloSpectate(numP, difficulty);
+      document.head.appendChild(s2);
+    };
+    document.head.appendChild(s1);
+    return;
+  }
+  
+  const { Game, getBoardLayout, ADJACENCY: adj } = self.GameLogic;
+  
+  soloMode = true;
+  soloGame = new Game(numP);
+  gameId = 'spectate-' + Math.random().toString(36).substr(2, 6);
+  myPlayerIndex = -1; // Spectator
+  numPlayers = numP;
+  boardLayout = getBoardLayout();
+  adjacency = adj;
+  colors = PLAYER_COLORS_LOCAL;
+  playerNames = [];
+  
+  // All players are AI
+  soloAIConfig = [];
+  for (let i = 0; i < numP; i++) {
+    const name = `🤖 Mako-Bot ${i + 1}`;
+    playerNames.push(name);
+    soloAIConfig.push({
+      playerIndex: i,
+      name,
+      difficulty,
+      moveHistory: [],
+      plannedChain: []
+    });
+  }
+  
+  if (soloAIWorker) soloAIWorker.terminate();
+  soloAIWorker = new Worker('/ai-webworker.js');
+  soloAIWorker.onmessage = handleAIWorkerMessage;
+  
+  gameState = soloGame.getState();
+  moveTrails = {};
+  chainActive = null;
+  selectedPos = null;
+  validTargets = [];
+  
+  showScreen('game');
+  document.getElementById('game-id-display').textContent = '👀 Spectate';
+  document.getElementById('surrender-btn').textContent = '🚪 Verlassen';
+  resizeCanvas();
+  updateTurnDisplay();
+  updateStatus('KI vs KI — lehne dich zurück! 🍿');
+  
+  // Kick off first AI turn
+  soloTriggerAI();
 }
 
 function soloGetMoves(from) {
