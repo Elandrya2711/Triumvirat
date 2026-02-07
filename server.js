@@ -68,7 +68,7 @@ io.on('connection', (socket) => {
     difficulty = validateNumber(difficulty, 1, 5, 3);
     
     const gameId = uuidv4().substring(0, 8);
-    const isSpectate = !!spectate;
+    const isSpectate = false; // Spectate mode disabled
     const effectivePlayers = numPlayers || 3;
     const game = new Game(effectivePlayers);
     const diff = difficulty;
