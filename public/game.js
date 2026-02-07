@@ -562,15 +562,45 @@ document.getElementById('end-turn-btn').addEventListener('click', () => {
   }
 });
 
+document.getElementById('surrender-btn').addEventListener('click', () => {
+  if (!gameId) return;
+  if (confirm('Wirklich aufgeben?')) {
+    socket.emit('surrender');
+    localStorage.removeItem('triumvirat-session');
+  }
+});
+
 document.getElementById('new-game-btn').addEventListener('click', () => {
   document.getElementById('game-over-overlay').classList.add('hidden');
   showScreen('lobby');
   gameState = null;
   selectedPos = null;
   validTargets = [];
+  localStorage.removeItem('triumvirat-session');
 });
 
+function saveSession() {
+  if (!gameId) return;
+  localStorage.setItem('triumvirat-session', JSON.stringify({
+    gameId, playerIndex: myPlayerIndex, playerName: document.getElementById('player-name').value || 'Spieler'
+  }));
+}
+
+function tryReconnect() {
+  const saved = localStorage.getItem('triumvirat-session');
+  if (!saved) return;
+  try {
+    const session = JSON.parse(saved);
+    if (session.gameId) {
+      socket.emit('reconnect-game', { gameId: session.gameId, playerIndex: session.playerIndex, playerName: session.playerName });
+    }
+  } catch (e) { localStorage.removeItem('triumvirat-session'); }
+}
+
 // Socket events
+// Try reconnect on socket connection
+socket.on('connect', () => { tryReconnect(); });
+
 socket.on('game-created', (data) => {
   gameId = data.gameId;
   myPlayerIndex = data.playerIndex;
@@ -582,6 +612,7 @@ socket.on('game-created', (data) => {
   
   document.getElementById('invite-code').textContent = gameId;
   document.getElementById('game-id-display').textContent = `#${gameId}`;
+  saveSession();
   
   if (!data.vsAI) {
     showScreen('waiting');
@@ -619,6 +650,7 @@ socket.on('game-start', (data) => {
   resizeCanvas();
   updateTurnDisplay();
   updateStatus(gameState.currentPlayer === myPlayerIndex ? 'Wähle eine Kugel aus!' : 'Warte auf den Gegner...');
+  saveSession();
 });
 
 socket.on('valid-moves', (data) => {
@@ -724,6 +756,46 @@ socket.on('game-over', (data) => {
     winnerText.textContent = `${data.winnerName} hat gewonnen!`;
   }
   overlay.classList.remove('hidden');
+  localStorage.removeItem('triumvirat-session');
+});
+
+socket.on('reconnected', (data) => {
+  gameId = data.gameId;
+  myPlayerIndex = data.playerIndex;
+  numPlayers = data.numPlayers;
+  boardLayout = data.boardLayout;
+  adjacency = data.adjacency;
+  colors = data.colors;
+  playerNames = data.playerNames;
+  gameState = data.state;
+  chainActive = data.state.chainActive || null;
+  
+  document.getElementById('game-id-display').textContent = `#${gameId}`;
+  showScreen('game');
+  resizeCanvas();
+  updateTurnDisplay();
+  updateEndTurnButton();
+  updateStatus(gameState.currentPlayer === myPlayerIndex ? 'Du bist dran!' : 'Warte auf den Gegner...');
+  showToast('🔄 Spiel wiederhergestellt!');
+});
+
+socket.on('reconnect-failed', () => {
+  localStorage.removeItem('triumvirat-session');
+  // Stay on lobby silently
+});
+
+socket.on('surrendered', (data) => {
+  gameState = data.state;
+  render();
+  const overlay = document.getElementById('game-over-overlay');
+  const winnerText = document.getElementById('winner-text');
+  if (data.surrenderedPlayer === myPlayerIndex) {
+    winnerText.textContent = '🏳️ Du hast aufgegeben!';
+  } else {
+    winnerText.textContent = `${data.surrenderedName} hat aufgegeben!`;
+  }
+  overlay.classList.remove('hidden');
+  localStorage.removeItem('triumvirat-session');
 });
 
 socket.on('not-your-turn', () => showToast('Nicht dein Zug!'));

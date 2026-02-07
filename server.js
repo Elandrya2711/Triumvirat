@@ -43,7 +43,8 @@ io.on('connection', (socket) => {
       vsAI: !!(vsAI || isSpectate),
       spectateMode: isSpectate,
       ai: null,
-      aiPlayers: []
+      aiPlayers: [],
+      createdAt: Date.now()
     };
 
     if (isSpectate) {
@@ -236,6 +237,87 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Reconnect to existing game
+  socket.on('reconnect-game', ({ gameId, playerIndex, playerName }) => {
+    const room = games.get(gameId);
+    if (!room || !room.started) {
+      socket.emit('reconnect-failed');
+      return;
+    }
+    
+    // Update the player's socket ID
+    const player = room.players.find(p => p.index === playerIndex && !p.id.startsWith('ai-'));
+    if (!player) {
+      socket.emit('reconnect-failed');
+      return;
+    }
+    
+    player.id = socket.id;
+    player.name = playerName || player.name;
+    socket.join(gameId);
+    socket.gameId = gameId;
+    socket.playerIndex = playerIndex;
+    
+    socket.emit('reconnected', {
+      gameId,
+      playerIndex,
+      numPlayers: room.numPlayers,
+      boardLayout: getBoardLayout(),
+      adjacency: ADJACENCY,
+      colors: PLAYER_COLORS,
+      playerNames: PLAYER_NAMES,
+      state: room.game.getState()
+    });
+    
+    console.log(`Player ${playerIndex} reconnected to game ${gameId}`);
+  });
+
+  // Surrender
+  socket.on('surrender', () => {
+    const room = games.get(socket.gameId);
+    if (!room || !room.started || room.game.gameOver) return;
+    
+    const surrenderedPlayer = socket.playerIndex;
+    const surrenderedName = room.players.find(p => p.index === surrenderedPlayer)?.name || 'Unbekannt';
+    
+    // Remove all marbles of surrendered player
+    for (let i = 0; i < room.game.board.length; i++) {
+      if (room.game.board[i] && room.game.board[i].player === surrenderedPlayer) {
+        room.game.board[i] = null;
+      }
+    }
+    
+    room.game._checkGameEnd();
+    
+    if (!room.game.gameOver) {
+      // If current player surrendered, advance turn
+      if (room.game.currentPlayer === surrenderedPlayer) {
+        room.game.chainActive = null;
+        room.game.lastJumpedOver = null;
+        room.game.currentPlayer = (room.game.currentPlayer + 1) % room.game.numPlayers;
+        room.game._skipEliminatedPlayers();
+      }
+      room.game._checkGameEnd();
+    }
+    
+    io.to(socket.gameId).emit('surrendered', {
+      surrenderedPlayer,
+      surrenderedName,
+      state: room.game.getState()
+    });
+    
+    if (room.game.gameOver) {
+      const winnerPlayer = room.players.find(p => p.index === room.game.winner);
+      io.to(socket.gameId).emit('game-over', {
+        winner: room.game.winner,
+        winnerName: winnerPlayer ? winnerPlayer.name : PLAYER_NAMES[room.game.winner],
+        state: room.game.getState()
+      });
+    }
+    
+    console.log(`Player ${surrenderedPlayer} surrendered in game ${socket.gameId}`);
+  });
+
   socket.on('disconnect', () => {
     if (socket.gameId) {
       const room = games.get(socket.gameId);
@@ -384,6 +466,19 @@ function executeAIChain(gameId) {
     }
   }, chainDelay);
 }
+
+// Auto-cleanup stale games every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, room] of games.entries()) {
+    const age = now - (room.createdAt || 0);
+    // Remove games older than 30 minutes, or finished games older than 5 minutes
+    if (age > 30 * 60 * 1000 || (room.game.gameOver && age > 5 * 60 * 1000)) {
+      games.delete(id);
+      console.log(`Cleaned up stale game ${id} (age: ${Math.round(age / 60000)}min)`);
+    }
+  }
+}, 5 * 60 * 1000);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
