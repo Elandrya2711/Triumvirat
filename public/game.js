@@ -489,6 +489,7 @@ function animateMove(from, to, marble, captures, onComplete) {
   };
   
   function step(timestamp) {
+    if (!animationData) return;
     const elapsed = timestamp - animationData.startTime;
     animationData.progress = Math.min(1, elapsed / animationData.duration);
     
