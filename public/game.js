@@ -17,6 +17,96 @@ let selectedPos = null;
 let validTargets = [];
 let animating = false;
 let chainActive = null; // position of marble in active chain jump
+const CORNERS = [0, 21, 27];
+
+// Client-side move calculation (avoids server roundtrip for highlighting)
+function getLocalValidMoves(from) {
+  if (!gameState || !adjacency.length) return [];
+  const board = gameState.board;
+  const cell = board[from];
+  if (!cell || cell.player !== myPlayerIndex) return [];
+  
+  const moves = [];
+  
+  // If chain is active, only continuation jumps
+  if (chainActive !== null) {
+    if (from !== chainActive) return [];
+    return getLocalContinuationJumps(from);
+  }
+  
+  // Check if forced corner marble
+  // (We approximate: if this player has a marble on a corner, only that marble can move)
+  let forcedCorner = null;
+  for (const c of CORNERS) {
+    if (board[c] && board[c].player === gameState.currentPlayer) {
+      forcedCorner = c;
+      break;
+    }
+  }
+  if (forcedCorner !== null && from !== forcedCorner) return [];
+  
+  // Simple moves
+  for (const adj of adjacency[from]) {
+    if (!board[adj] && !CORNERS.includes(adj)) {
+      moves.push(adj);
+    }
+  }
+  
+  // Jumps
+  for (const adj of adjacency[from]) {
+    const target = board[adj];
+    if (!target) continue;
+    if (target.size > cell.size) continue;
+    const landing = getJumpLanding(from, adj);
+    if (landing < 0 || landing >= board.length) continue;
+    if (board[landing]) continue;
+    moves.push(landing);
+  }
+  
+  return moves;
+}
+
+function getLocalContinuationJumps(from) {
+  if (!gameState) return [];
+  const board = gameState.board;
+  const cell = board[from];
+  if (!cell) return [];
+  const moves = [];
+  for (const adj of adjacency[from]) {
+    const target = board[adj];
+    if (!target) continue;
+    if (target.size > cell.size) continue;
+    const landing = getJumpLanding(from, adj);
+    if (landing < 0 || landing >= board.length) continue;
+    if (board[landing]) continue;
+    moves.push(landing);
+  }
+  return moves;
+}
+
+function getJumpLanding(from, over) {
+  // Calculate landing position based on row/col arithmetic
+  const frc = idxToRC(from), orc = idxToRC(over);
+  if (!frc || !orc) return -1;
+  const dr = orc.row - frc.row, dc = orc.col - frc.col;
+  return rcToIdx(orc.row + dr, orc.col + dc);
+}
+
+function idxToRC(idx) {
+  let count = 0;
+  for (let row = 0; row < 7; row++) {
+    for (let col = 0; col <= row; col++) {
+      if (count === idx) return { row, col };
+      count++;
+    }
+  }
+  return null;
+}
+
+function rcToIdx(row, col) {
+  if (row < 0 || row >= 7 || col < 0 || col > row) return -1;
+  return (row * (row + 1)) / 2 + col;
+}
 
 // Animation state
 let animationData = null;
@@ -102,6 +192,7 @@ function resizeCanvas() {
   canvas.width = w * DPR;
   canvas.height = h * DPR;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  clearMarbleCache();
   computePositions(w, h);
   render();
 }
@@ -319,88 +410,90 @@ function drawHighlights() {
   }
 }
 
-function drawMarble(x, y, radius, color, selected) {
-  // 1. Shadow beneath marble (in the hollow, offset for 3D)
-  const shadowGrad = ctx.createRadialGradient(x + 2, y + 3, radius * 0.3, x + 2, y + 3, radius + 4);
+// Marble sprite cache: key = "color-radius" → offscreen canvas (pre-rendered marble)
+const marbleCache = new Map();
+
+function getMarbleSprite(radius, color) {
+  const key = `${color}-${radius}`;
+  if (marbleCache.has(key)) return marbleCache.get(key);
+  
+  const pad = radius + 8; // extra space for shadow + selection ring
+  const size = pad * 2;
+  const oc = document.createElement('canvas');
+  oc.width = size * DPR;
+  oc.height = size * DPR;
+  const c = oc.getContext('2d');
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const cx = pad, cy = pad;
+  
+  // 1. Shadow
+  const shadowGrad = c.createRadialGradient(cx + 2, cy + 3, radius * 0.3, cx + 2, cy + 3, radius + 4);
   shadowGrad.addColorStop(0, 'rgba(0,0,0,0.6)');
   shadowGrad.addColorStop(0.6, 'rgba(0,0,0,0.2)');
   shadowGrad.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.beginPath();
-  ctx.arc(x + 2, y + 3, radius + 4, 0, Math.PI * 2);
-  ctx.fillStyle = shadowGrad;
-  ctx.fill();
+  c.beginPath(); c.arc(cx + 2, cy + 3, radius + 4, 0, Math.PI * 2);
+  c.fillStyle = shadowGrad; c.fill();
   
-  // 2. Main marble body — deep glass gradient
-  const bodyGrad = ctx.createRadialGradient(
-    x - radius * 0.25, y - radius * 0.25, radius * 0.05,
-    x + radius * 0.1, y + radius * 0.1, radius
-  );
+  // 2. Body
+  const bodyGrad = c.createRadialGradient(cx - radius * 0.25, cy - radius * 0.25, radius * 0.05, cx + radius * 0.1, cy + radius * 0.1, radius);
   bodyGrad.addColorStop(0, lightenColor(color, 70));
   bodyGrad.addColorStop(0.15, lightenColor(color, 40));
   bodyGrad.addColorStop(0.4, color);
   bodyGrad.addColorStop(0.7, darkenColor(color, 15));
   bodyGrad.addColorStop(0.9, darkenColor(color, 35));
   bodyGrad.addColorStop(1, darkenColor(color, 55));
+  c.beginPath(); c.arc(cx, cy, radius, 0, Math.PI * 2);
+  c.fillStyle = bodyGrad; c.fill();
   
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = bodyGrad;
-  ctx.fill();
-  
-  // 3. Inner swirl (offset darker region for glass depth)
-  const swirlGrad = ctx.createRadialGradient(
-    x + radius * 0.15, y + radius * 0.1, radius * 0.1,
-    x + radius * 0.1, y + radius * 0.05, radius * 0.6
-  );
+  // 3. Inner swirl
+  const swirlGrad = c.createRadialGradient(cx + radius * 0.15, cy + radius * 0.1, radius * 0.1, cx + radius * 0.1, cy + radius * 0.05, radius * 0.6);
   swirlGrad.addColorStop(0, 'rgba(0,0,0,0.12)');
   swirlGrad.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = swirlGrad;
-  ctx.fill();
+  c.beginPath(); c.arc(cx, cy, radius, 0, Math.PI * 2);
+  c.fillStyle = swirlGrad; c.fill();
   
-  // 4. Fresnel rim (edge darkening)
-  const rimGrad = ctx.createRadialGradient(x, y, radius * 0.7, x, y, radius);
+  // 4. Fresnel rim
+  const rimGrad = c.createRadialGradient(cx, cy, radius * 0.7, cx, cy, radius);
   rimGrad.addColorStop(0, 'rgba(0,0,0,0)');
   rimGrad.addColorStop(0.8, 'rgba(0,0,0,0)');
   rimGrad.addColorStop(1, 'rgba(0,0,0,0.3)');
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.fillStyle = rimGrad;
-  ctx.fill();
+  c.beginPath(); c.arc(cx, cy, radius, 0, Math.PI * 2);
+  c.fillStyle = rimGrad; c.fill();
   
-  // 5. Main window reflection (large, soft, top-left)
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.clip();
-  
-  ctx.beginPath();
-  ctx.ellipse(x - radius * 0.28, y - radius * 0.32, radius * 0.38, radius * 0.25, -0.5, 0, Math.PI * 2);
-  const reflGrad = ctx.createRadialGradient(
-    x - radius * 0.28, y - radius * 0.32, 0,
-    x - radius * 0.28, y - radius * 0.32, radius * 0.38
-  );
+  // 5. Window reflection
+  c.save();
+  c.beginPath(); c.arc(cx, cy, radius, 0, Math.PI * 2); c.clip();
+  c.beginPath();
+  c.ellipse(cx - radius * 0.28, cy - radius * 0.32, radius * 0.38, radius * 0.25, -0.5, 0, Math.PI * 2);
+  const reflGrad = c.createRadialGradient(cx - radius * 0.28, cy - radius * 0.32, 0, cx - radius * 0.28, cy - radius * 0.32, radius * 0.38);
   reflGrad.addColorStop(0, 'rgba(255,255,255,0.65)');
   reflGrad.addColorStop(0.5, 'rgba(255,255,255,0.25)');
   reflGrad.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = reflGrad;
-  ctx.fill();
-  ctx.restore();
+  c.fillStyle = reflGrad; c.fill();
+  c.restore();
   
-  // 6. Sharp specular highlight (small, bright point)
-  ctx.beginPath();
-  ctx.arc(x - radius * 0.2, y - radius * 0.35, radius * 0.08, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.fill();
+  // 6. Specular highlight
+  c.beginPath(); c.arc(cx - radius * 0.2, cy - radius * 0.35, radius * 0.08, 0, Math.PI * 2);
+  c.fillStyle = 'rgba(255,255,255,0.9)'; c.fill();
   
-  // 7. Secondary reflection (bottom-right, table bounce light)
-  ctx.beginPath();
-  ctx.arc(x + radius * 0.22, y + radius * 0.28, radius * 0.1, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255,255,255,0.12)';
-  ctx.fill();
+  // 7. Secondary reflection
+  c.beginPath(); c.arc(cx + radius * 0.22, cy + radius * 0.28, radius * 0.1, 0, Math.PI * 2);
+  c.fillStyle = 'rgba(255,255,255,0.12)'; c.fill();
   
-  // 8. Selection ring — pulsing golden candlelight
+  marbleCache.set(key, { canvas: oc, pad });
+  return { canvas: oc, pad };
+}
+
+function clearMarbleCache() { marbleCache.clear(); }
+
+function drawMarble(x, y, radius, color, selected) {
+  const sprite = getMarbleSprite(radius, color);
+  // Draw cached sprite centered at (x, y)
+  ctx.drawImage(sprite.canvas, 
+    (x - sprite.pad) , (y - sprite.pad),
+    sprite.pad * 2, sprite.pad * 2);
+  
+  // Selection ring drawn live (it pulses, can't cache)
   if (selected) {
     ctx.beginPath();
     ctx.arc(x, y, radius + 5, 0, Math.PI * 2);
@@ -611,12 +704,11 @@ function handleClick(e) {
     return;
   }
   
-  // If clicking own marble, select it
+  // If clicking own marble, select it (local move calc — no server roundtrip)
   const cell = gameState.board[pos];
   if (cell && cell.player === myPlayerIndex) {
     selectedPos = pos;
-    validTargets = [];
-    socket.emit('get-moves', { from: pos });
+    validTargets = getLocalValidMoves(pos);
     render();
     return;
   }
