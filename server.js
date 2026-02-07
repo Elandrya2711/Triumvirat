@@ -340,6 +340,16 @@ io.on('connection', (socket) => {
     console.log(`Player ${surrenderedPlayer} surrendered in game ${socket.gameId}`);
   });
 
+  // Leave game (spectator or player wanting to quit without surrender)
+  socket.on('leave-game', () => {
+    const gid = socket.gameId;
+    if (!gid) return;
+    socket.leave(gid);
+    socket.gameId = null;
+    socket.playerIndex = null;
+    console.log(`Socket ${socket.id} left game ${gid}`);
+  });
+
   socket.on('disconnect', () => {
     if (socket.gameId) {
       const room = games.get(socket.gameId);

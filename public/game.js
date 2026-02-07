@@ -574,9 +574,21 @@ document.getElementById('end-turn-btn').addEventListener('click', () => {
 
 document.getElementById('surrender-btn').addEventListener('click', () => {
   if (!gameId) return;
-  if (confirm('Wirklich aufgeben?')) {
-    socket.emit('surrender');
+  const isSpectator = myPlayerIndex === -1;
+  const msg = isSpectator ? 'Spiel verlassen?' : 'Wirklich aufgeben?';
+  if (confirm(msg)) {
+    if (isSpectator) {
+      socket.emit('leave-game');
+    } else {
+      socket.emit('surrender');
+    }
     localStorage.removeItem('triumvirat-session');
+    gameId = null;
+    gameState = null;
+    selectedPos = null;
+    validTargets = [];
+    chainActive = null;
+    showScreen('lobby');
   }
 });
 
@@ -664,6 +676,7 @@ socket.on('game-start', (data) => {
   resizeCanvas();
   updateTurnDisplay();
   updateStatus(gameState.currentPlayer === myPlayerIndex ? 'Wähle eine Kugel aus!' : 'Warte auf den Gegner...');
+  document.getElementById('surrender-btn').textContent = myPlayerIndex === -1 ? '🚪 Verlassen' : '🏳️ Aufgeben';
   saveSession();
 });
 
@@ -808,6 +821,7 @@ socket.on('reconnected', (data) => {
   updateTurnDisplay();
   updateEndTurnButton();
   updateStatus(gameState.currentPlayer === myPlayerIndex ? 'Du bist dran!' : 'Warte auf den Gegner...');
+  document.getElementById('surrender-btn').textContent = myPlayerIndex === -1 ? '🚪 Verlassen' : '🏳️ Aufgeben';
   showToast('🔄 Spiel wiederhergestellt!');
 });
 
