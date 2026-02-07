@@ -392,6 +392,10 @@ canvas.addEventListener('touchstart', (e) => {
 
 function handleClick(e) {
   if (!gameState || gameState.gameOver || animating) return;
+  if (myPlayerIndex === -1) {
+    showToast('Du schaust nur zu! 🍿');
+    return;
+  }
   if (gameState.currentPlayer !== myPlayerIndex) {
     showToast('Nicht dein Zug!');
     return;
@@ -454,7 +458,7 @@ function updateTurnDisplay() {
   const color = colors[gameState.currentPlayer];
   const name = playerNames[gameState.currentPlayer];
   const isMyTurn = gameState.currentPlayer === myPlayerIndex;
-  turnEl.textContent = isMyTurn ? '🎯 Du bist dran!' : `⏳ ${name} ist dran`;
+  turnEl.textContent = myPlayerIndex === -1 ? `🍿 ${name} ist dran` : (isMyTurn ? '🎯 Du bist dran!' : `⏳ ${name} ist dran`);
   turnEl.style.background = color;
   turnEl.style.color = '#fff';
   
@@ -515,6 +519,11 @@ document.getElementById('ai-btn').addEventListener('click', () => {
   const name = document.getElementById('player-name').value.trim() || 'Spieler 1';
   const difficulty = parseInt(diffSlider.value);
   socket.emit('create-game', { playerName: name, numPlayers, vsAI: true, difficulty });
+});
+
+document.getElementById('spectate-btn').addEventListener('click', () => {
+  const difficulty = parseInt(diffSlider.value);
+  socket.emit('create-game', { playerName: 'Zuschauer', numPlayers: 3, spectate: true, difficulty });
 });
 
 document.getElementById('join-btn').addEventListener('click', () => {

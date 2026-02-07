@@ -27,23 +27,36 @@ io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
 
   // Create a new game
-  socket.on('create-game', ({ playerName, numPlayers, vsAI, difficulty }) => {
+  socket.on('create-game', ({ playerName, numPlayers, vsAI, spectate, difficulty }) => {
     const gameId = uuidv4().substring(0, 8);
-    const effectivePlayers = vsAI ? (numPlayers || 2) : (numPlayers || 3);
+    const isSpectate = !!spectate;
+    const effectivePlayers = isSpectate ? 3 : (vsAI ? (numPlayers || 2) : (numPlayers || 3));
     const game = new Game(effectivePlayers);
     const diff = Math.max(1, Math.min(5, difficulty || 3));
     
     const room = {
       game,
       numPlayers: effectivePlayers,
-      players: [{ id: socket.id, name: playerName || 'Spieler 1', index: 0 }],
+      players: [],
+      spectators: [socket.id],
       started: false,
-      vsAI: !!vsAI,
+      vsAI: !!(vsAI || isSpectate),
+      spectateMode: isSpectate,
       ai: null,
-      aiPlayers: [] // array of AIPlayer instances
+      aiPlayers: []
     };
 
-    if (vsAI) {
+    if (isSpectate) {
+      // All 3 players are AI
+      for (let i = 0; i < 3; i++) {
+        const name = `🤖 Mako-Bot ${i + 1}`;
+        const ai = new AIPlayer(i, name, diff);
+        room.aiPlayers.push(ai);
+        room.players.push({ id: `ai-${i}`, name: ai.name, index: i });
+      }
+      room.ai = room.aiPlayers[0];
+    } else if (vsAI) {
+      room.players.push({ id: socket.id, name: playerName || 'Spieler 1', index: 0 });
       const numAI = effectivePlayers - 1;
       for (let i = 0; i < numAI; i++) {
         const name = numAI > 1 ? `🤖 Mako-Bot ${i + 1}` : '🤖 Mako-Bot';
@@ -51,34 +64,40 @@ io.on('connection', (socket) => {
         room.aiPlayers.push(ai);
         room.players.push({ id: `ai-${i}`, name: ai.name, index: i + 1 });
       }
-      // Keep legacy .ai for backwards compat
       room.ai = room.aiPlayers[0];
+    } else {
+      room.players.push({ id: socket.id, name: playerName || 'Spieler 1', index: 0 });
     }
 
     games.set(gameId, room);
 
     socket.join(gameId);
     socket.gameId = gameId;
-    socket.playerIndex = 0;
+    socket.playerIndex = isSpectate ? -1 : 0;
 
     socket.emit('game-created', {
       gameId,
-      playerIndex: 0,
+      playerIndex: isSpectate ? -1 : 0,
       numPlayers: effectivePlayers,
       boardLayout: getBoardLayout(),
       adjacency: ADJACENCY,
       colors: PLAYER_COLORS,
       playerNames: PLAYER_NAMES,
-      vsAI: !!vsAI
+      vsAI: !!(vsAI || isSpectate),
+      spectateMode: isSpectate
     });
 
-    // Auto-start AI games immediately
-    if (vsAI) {
+    // Auto-start AI and spectate games immediately
+    if (vsAI || isSpectate) {
       room.started = true;
       socket.emit('game-start', {
         state: room.game.getState(),
         players: room.players.map(p => ({ name: p.name, index: p.index }))
       });
+      // In spectate mode, kick off AI turns
+      if (isSpectate) {
+        executeAITurns(gameId);
+      }
     }
 
     console.log(`Game ${gameId} created (${effectivePlayers} players${vsAI ? ', vs AI' : ''})`);

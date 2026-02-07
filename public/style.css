@@ -70,6 +70,8 @@ input:focus { outline: none; border-color: #e94560; }
 .primary-btn:hover { background: #c0392b; }
 .ai-btn { background: #8e44ad; margin-left: 10px; }
 .ai-btn:hover { background: #7d3c98; }
+.spectate-btn { background: #e67e22; margin-left: 10px; margin-top: 8px; }
+.spectate-btn:hover { background: #d35400; }
 
 /* AI Section */
 .ai-section { margin-top: 15px; }
