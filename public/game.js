@@ -18,6 +18,10 @@ let validTargets = [];
 let animating = false;
 let chainActive = null; // position of marble in active chain jump
 
+// Animation state
+let animationData = null; // { fromPos, toPos, marble, progress, captures, onComplete }
+const ANIM_DURATION = 300; // ms per move
+
 // Canvas setup
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
@@ -87,6 +91,9 @@ function render() {
   
   // Draw marbles
   drawMarbles();
+  
+  // Draw animating marble on top
+  drawAnimatingMarble();
 }
 
 function drawBoard(w, h) {
@@ -159,6 +166,9 @@ function drawMarbles() {
     const p = posCoords[i];
     if (!p) continue;
     
+    // Skip marble at destination during animation (it will be drawn by animating function)
+    if (animationData && i === animationData.toPos) continue;
+    
     if (!cell) {
       // Empty slot
       ctx.beginPath();
@@ -203,6 +213,85 @@ function drawMarbles() {
       ctx.stroke();
     }
   }
+}
+
+function drawAnimatingMarble() {
+  if (!animationData) return;
+  const { fromCoord, toCoord, marble, progress } = animationData;
+  
+  // Ease-out cubic
+  const t = 1 - Math.pow(1 - progress, 3);
+  const x = fromCoord.x + (toCoord.x - fromCoord.x) * t;
+  const y = fromCoord.y + (toCoord.y - fromCoord.y) * t;
+  
+  const radius = MARBLE_SIZES[marble.size] || 16;
+  const color = colors[marble.player] || '#888';
+  
+  // Shadow
+  ctx.beginPath();
+  ctx.arc(x + 2, y + 2, radius, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fill();
+  
+  // Marble body
+  const grad = ctx.createRadialGradient(x - radius * 0.3, y - radius * 0.3, radius * 0.1, x, y, radius);
+  grad.addColorStop(0, lightenColor(color, 40));
+  grad.addColorStop(0.7, color);
+  grad.addColorStop(1, darkenColor(color, 30));
+  
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  
+  // Shine
+  ctx.beginPath();
+  ctx.arc(x - radius * 0.25, y - radius * 0.25, radius * 0.3, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.fill();
+  
+  // Glow trail
+  ctx.beginPath();
+  ctx.arc(x, y, radius + 5, 0, Math.PI * 2);
+  ctx.strokeStyle = `rgba(255, 255, 100, ${0.4 * (1 - t)})`;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function animateMove(from, to, marble, captures, onComplete) {
+  if (!posCoords[from] || !posCoords[to]) {
+    onComplete();
+    return;
+  }
+  
+  animating = true;
+  animationData = {
+    fromPos: from,
+    toPos: to,
+    fromCoord: { ...posCoords[from] },
+    toCoord: { ...posCoords[to] },
+    marble: { ...marble },
+    progress: 0,
+    captures: captures || [],
+    startTime: performance.now()
+  };
+  
+  function step(timestamp) {
+    const elapsed = timestamp - animationData.startTime;
+    animationData.progress = Math.min(1, elapsed / ANIM_DURATION);
+    
+    render();
+    
+    if (animationData.progress < 1) {
+      requestAnimationFrame(step);
+    } else {
+      animationData = null;
+      animating = false;
+      onComplete();
+    }
+  }
+  
+  requestAnimationFrame(step);
 }
 
 function lightenColor(hex, percent) {
@@ -478,34 +567,65 @@ socket.on('valid-moves', (data) => {
 });
 
 socket.on('move-made', (data) => {
-  gameState = data.state;
+  // Get marble info from old state BEFORE updating
+  const oldBoard = gameState ? gameState.board : null;
+  const movingMarble = oldBoard ? oldBoard[data.from] : null;
   
-  if (data.chainActive !== null && data.chainActive !== undefined) {
-    // Chain jump active
-    chainActive = data.chainActive;
-    selectedPos = data.chainActive;
-    validTargets = data.continuationMoves || [];
-    render();
-    updateTurnDisplay();
-    updateEndTurnButton();
-    if (gameState.currentPlayer === myPlayerIndex) {
-      updateStatus(`🔥 Kettensprung! Springe weiter oder beende den Zug.`);
-    } else {
-      updateStatus(`Gegner kann weiterspringen...`);
-    }
-  } else {
-    chainActive = null;
-    selectedPos = null;
-    validTargets = [];
-    render();
-    updateTurnDisplay();
-    updateEndTurnButton();
+  function applyMoveState() {
+    gameState = data.state;
     
-    if (data.captures.length > 0) {
-      updateStatus(`${data.captures.length} Kugel(n) geschlagen!`);
+    if (data.chainActive !== null && data.chainActive !== undefined) {
+      chainActive = data.chainActive;
+      selectedPos = data.chainActive;
+      validTargets = data.continuationMoves || [];
+      render();
+      updateTurnDisplay();
+      updateEndTurnButton();
+      if (gameState.currentPlayer === myPlayerIndex) {
+        updateStatus(`🔥 Kettensprung! Springe weiter oder beende den Zug.`);
+      } else {
+        updateStatus(`Gegner kann weiterspringen...`);
+      }
     } else {
-      updateStatus(gameState.currentPlayer === myPlayerIndex ? 'Du bist dran!' : 'Warte auf den Gegner...');
+      chainActive = null;
+      selectedPos = null;
+      validTargets = [];
+      render();
+      updateTurnDisplay();
+      updateEndTurnButton();
+      
+      if (data.captures.length > 0) {
+        updateStatus(`${data.captures.length} Kugel(n) geschlagen!`);
+      } else {
+        updateStatus(gameState.currentPlayer === myPlayerIndex ? 'Du bist dran!' : 'Warte auf den Gegner...');
+      }
     }
+  }
+  
+  // Animate the move if we have position data
+  if (movingMarble && posCoords[data.from] && posCoords[data.to]) {
+    // Remove captured marbles from display immediately before animation
+    if (data.captures && data.captures.length > 0) {
+      for (const cap of data.captures) {
+        if (gameState && gameState.board) {
+          // Will be handled by state update
+        }
+      }
+    }
+    // Temporarily update board to remove marble from source (for clean animation)
+    const tempState = JSON.parse(JSON.stringify(gameState));
+    tempState.board[data.from] = null;
+    // Remove captured marbles from temp display
+    if (data.captures) {
+      for (const cap of data.captures) {
+        tempState.board[cap.pos] = null;
+      }
+    }
+    gameState = tempState;
+    
+    animateMove(data.from, data.to, movingMarble, data.captures, applyMoveState);
+  } else {
+    applyMoveState();
   }
 });
 
