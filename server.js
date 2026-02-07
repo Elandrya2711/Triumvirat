@@ -9,6 +9,7 @@ const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const { Game, getBoardLayout, ADJACENCY } = require('./game-logic');
+const { AIPlayer } = require('./ai-player');
 
 const app = express();
 const server = http.createServer(app);
@@ -26,16 +27,27 @@ io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
 
   // Create a new game
-  socket.on('create-game', ({ playerName, numPlayers }) => {
+  socket.on('create-game', ({ playerName, numPlayers, vsAI }) => {
     const gameId = uuidv4().substring(0, 8);
-    const game = new Game(numPlayers || 3);
+    const effectivePlayers = vsAI ? 2 : (numPlayers || 3);
+    const game = new Game(effectivePlayers);
     
-    games.set(gameId, {
+    const room = {
       game,
-      numPlayers: numPlayers || 3,
+      numPlayers: effectivePlayers,
       players: [{ id: socket.id, name: playerName || 'Spieler 1', index: 0 }],
-      started: false
-    });
+      started: false,
+      vsAI: !!vsAI,
+      ai: null
+    };
+
+    if (vsAI) {
+      const ai = new AIPlayer(1, '🤖 Mako-Bot');
+      room.ai = ai;
+      room.players.push({ id: 'ai', name: ai.name, index: 1 });
+    }
+
+    games.set(gameId, room);
 
     socket.join(gameId);
     socket.gameId = gameId;
@@ -44,14 +56,24 @@ io.on('connection', (socket) => {
     socket.emit('game-created', {
       gameId,
       playerIndex: 0,
-      numPlayers: numPlayers || 3,
+      numPlayers: effectivePlayers,
       boardLayout: getBoardLayout(),
       adjacency: ADJACENCY,
       colors: PLAYER_COLORS,
-      playerNames: PLAYER_NAMES
+      playerNames: PLAYER_NAMES,
+      vsAI: !!vsAI
     });
 
-    console.log(`Game ${gameId} created (${numPlayers} players)`);
+    // Auto-start AI games immediately
+    if (vsAI) {
+      room.started = true;
+      socket.emit('game-start', {
+        state: room.game.getState(),
+        players: room.players.map(p => ({ name: p.name, index: p.index }))
+      });
+    }
+
+    console.log(`Game ${gameId} created (${effectivePlayers} players${vsAI ? ', vs AI' : ''})`);
   });
 
   // Join existing game
@@ -156,6 +178,8 @@ io.on('connection', (socket) => {
         winnerName: winnerPlayer ? winnerPlayer.name : PLAYER_NAMES[room.game.winner],
         state: room.game.getState()
       });
+    } else if (room.vsAI && result.chainActive === null) {
+      executeAITurn(socket.gameId);
     }
   });
 
@@ -178,6 +202,11 @@ io.on('connection', (socket) => {
     io.to(socket.gameId).emit('turn-ended', {
       state: room.game.getState()
     });
+
+    // Trigger AI turn after human ends chain
+    if (room.vsAI) {
+      executeAITurn(socket.gameId);
+    }
   });
 
   socket.on('disconnect', () => {
@@ -197,6 +226,99 @@ io.on('connection', (socket) => {
     }
   });
 });
+
+// AI turn execution
+function executeAITurn(gameId) {
+  const room = games.get(gameId);
+  if (!room || !room.vsAI || !room.ai || room.game.gameOver) return;
+  if (room.game.currentPlayer !== room.ai.playerIndex) return;
+
+  const delay = 1000 + Math.random() * 1000; // 1-2 seconds
+
+  setTimeout(() => {
+    const room = games.get(gameId);
+    if (!room || room.game.gameOver) return;
+    if (room.game.currentPlayer !== room.ai.playerIndex) return;
+
+    const move = room.ai.chooseMove(room.game);
+    if (!move) return;
+
+    const result = room.game.makeMove(move.from, move.to);
+    if (!result.valid) return;
+
+    io.to(gameId).emit('move-made', {
+      from: move.from,
+      to: move.to,
+      captures: result.captures || [],
+      chainActive: result.chainActive,
+      continuationMoves: result.continuationMoves || [],
+      state: room.game.getState()
+    });
+
+    if (room.game.gameOver) {
+      const winnerPlayer = room.players.find(p => p.index === room.game.winner);
+      io.to(gameId).emit('game-over', {
+        winner: room.game.winner,
+        winnerName: winnerPlayer ? winnerPlayer.name : PLAYER_NAMES[room.game.winner],
+        state: room.game.getState()
+      });
+      return;
+    }
+
+    // Handle chain jumps
+    if (result.chainActive !== null && result.chainActive !== undefined) {
+      executeAIChain(gameId);
+    }
+  }, delay);
+}
+
+function executeAIChain(gameId) {
+  const chainDelay = 800 + Math.random() * 700;
+
+  setTimeout(() => {
+    const room = games.get(gameId);
+    if (!room || room.game.gameOver || room.game.chainActive === null) return;
+    if (room.game.currentPlayer !== room.ai.playerIndex) return;
+
+    const cont = room.ai.chooseContinuation(room.game);
+    if (!cont) {
+      // End turn
+      room.game.endTurn();
+      io.to(gameId).emit('turn-ended', { state: room.game.getState() });
+      return;
+    }
+
+    const result = room.game.makeMove(cont.from, cont.to);
+    if (!result.valid) {
+      room.game.endTurn();
+      io.to(gameId).emit('turn-ended', { state: room.game.getState() });
+      return;
+    }
+
+    io.to(gameId).emit('move-made', {
+      from: cont.from,
+      to: cont.to,
+      captures: result.captures || [],
+      chainActive: result.chainActive,
+      continuationMoves: result.continuationMoves || [],
+      state: room.game.getState()
+    });
+
+    if (room.game.gameOver) {
+      const winnerPlayer = room.players.find(p => p.index === room.game.winner);
+      io.to(gameId).emit('game-over', {
+        winner: room.game.winner,
+        winnerName: winnerPlayer ? winnerPlayer.name : PLAYER_NAMES[room.game.winner],
+        state: room.game.getState()
+      });
+      return;
+    }
+
+    if (result.chainActive !== null && result.chainActive !== undefined) {
+      executeAIChain(gameId);
+    }
+  }, chainDelay);
+}
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {

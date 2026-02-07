@@ -68,6 +68,8 @@ input:focus { outline: none; border-color: #e94560; }
   transition: background 0.2s;
 }
 .primary-btn:hover { background: #c0392b; }
+.ai-btn { background: #8e44ad; margin-left: 10px; }
+.ai-btn:hover { background: #7d3c98; }
 
 .secondary-btn {
   background: #16213e;

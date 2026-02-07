@@ -358,6 +358,11 @@ document.getElementById('create-btn').addEventListener('click', () => {
   socket.emit('create-game', { playerName: name, numPlayers });
 });
 
+document.getElementById('ai-btn').addEventListener('click', () => {
+  const name = document.getElementById('player-name').value.trim() || 'Spieler 1';
+  socket.emit('create-game', { playerName: name, numPlayers: 2, vsAI: true });
+});
+
 document.getElementById('join-btn').addEventListener('click', () => {
   const name = document.getElementById('join-name').value.trim() || 'Spieler';
   const code = document.getElementById('game-code').value.trim();
@@ -412,7 +417,10 @@ socket.on('game-created', (data) => {
   
   document.getElementById('invite-code').textContent = gameId;
   document.getElementById('game-id-display').textContent = `#${gameId}`;
-  showScreen('waiting');
+  if (!data.vsAI) {
+    showScreen('waiting');
+  }
+  // AI games auto-start via game-start event
 });
 
 socket.on('game-joined', (data) => {
