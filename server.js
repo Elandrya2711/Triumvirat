@@ -10,6 +10,7 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const { Game, getBoardLayout, ADJACENCY } = require('./game-logic');
 const { AIPlayer } = require('./ai-player');
+const { chooseMoveAsync, chooseContinuationAsync } = require('./ai-thread');
 
 const app = express();
 const server = http.createServer(app);
@@ -488,8 +489,8 @@ function getActiveAI(room, gameId) {
   return ai;
 }
 
-// Execute AI turns - will chain through multiple AIs if needed (Issue #2: AI lock)
-function executeAITurns(gameId) {
+// Execute AI turns — non-blocking via Worker Threads (Issue #2: AI lock)
+async function executeAITurns(gameId) {
   const room = games.get(gameId);
   if (!room || !room.vsAI || room.game.gameOver || room.aiExecuting) return;
   
@@ -497,126 +498,105 @@ function executeAITurns(gameId) {
   if (!ai) return; // It's the human's turn
 
   room.aiExecuting = true; // Issue #2: Set lock
-  const delay = 1000 + Math.random() * 1000;
+  const delay = 800 + Math.random() * 700;
+  await new Promise(r => setTimeout(r, delay));
 
-  setTimeout(() => {
-    // Issue BUG-5: Check if game still exists (could be deleted by cleanup)
-    if (!games.has(gameId)) return;
-    const room = games.get(gameId);
-    if (!room || room.game.gameOver) {
-      if (room) room.aiExecuting = false;
-      return;
-    }
-    const ai = getActiveAI(room, gameId);
-    if (!ai) {
-      room.aiExecuting = false;
-      return;
-    }
+  // Check game still exists after delay
+  if (!games.has(gameId)) return;
+  if (room.game.gameOver) { room.aiExecuting = false; return; }
 
-    let move;
-    try {
-      move = ai.chooseMove(room.game);
-    } catch (err) {
-      logAIError(gameId, ai.playerIndex, err.message, 'chooseMove');
-      // Fallback: pick random valid move
-      const fallbackMoves = room.game.getValidMoves();
-      move = fallbackMoves.length > 0 ? fallbackMoves[0] : null;
-    }
-    if (!move) {
-      logAIError(gameId, room.game.currentPlayer, 'No moves available', 'chooseMove');
-      room.aiExecuting = false;
-      return;
-    }
+  const { move, elapsed, timedOut } = await chooseMoveAsync(room.game, ai);
+  
+  // Check game still exists after worker
+  if (!games.has(gameId)) return;
+  if (room.game.gameOver) { room.aiExecuting = false; return; }
+  
+  if (timedOut) console.log(`[AI] Player ${ai.playerIndex} timed out, using fallback move`);
+  if (elapsed) console.log(`[AI] Player ${ai.playerIndex} computed in ${elapsed}ms`);
 
-    room.lastActivity = Date.now(); // Issue #1: Update activity
-    
-    const result = room.game.makeMove(move.from, move.to);
-    if (!result.valid) {
-      logAIError(gameId, ai.playerIndex, `Invalid move ${move.from}→${move.to}: ${result.error}`, 'makeMove');
-      room.aiExecuting = false;
-      return;
-    }
+  if (!move) {
+    logAIError(gameId, room.game.currentPlayer, 'No moves available', 'chooseMove');
+    room.aiExecuting = false;
+    return;
+  }
 
-    io.to(gameId).emit('move-made', {
-      from: move.from,
-      to: move.to,
-      captures: result.captures || [],
-      chainActive: result.chainActive,
-      continuationMoves: result.continuationMoves || [],
+  room.lastActivity = Date.now();
+  
+  const result = room.game.makeMove(move.from, move.to);
+  if (!result.valid) {
+    logAIError(gameId, ai.playerIndex, `Invalid move ${move.from}→${move.to}: ${result.error}`, 'makeMove');
+    room.aiExecuting = false;
+    return;
+  }
+
+  io.to(gameId).emit('move-made', {
+    from: move.from,
+    to: move.to,
+    captures: result.captures || [],
+    chainActive: result.chainActive,
+    continuationMoves: result.continuationMoves || [],
+    state: room.game.getState()
+  });
+
+  if (room.game.gameOver) {
+    const winnerPlayer = room.players.find(p => p.index === room.game.winner);
+    io.to(gameId).emit('game-over', {
+      winner: room.game.winner,
+      winnerName: winnerPlayer ? winnerPlayer.name : PLAYER_NAMES[room.game.winner],
       state: room.game.getState()
     });
+    room.aiExecuting = false;
+    return;
+  }
 
-    if (room.game.gameOver) {
-      const winnerPlayer = room.players.find(p => p.index === room.game.winner);
-      io.to(gameId).emit('game-over', {
-        winner: room.game.winner,
-        winnerName: winnerPlayer ? winnerPlayer.name : PLAYER_NAMES[room.game.winner],
-        state: room.game.getState()
-      });
-      room.aiExecuting = false; // Issue #2: Release lock
-      return;
-    }
-
-    room.aiExecuting = false; // Issue #2: Release lock
-    
-    if (result.chainActive !== null && result.chainActive !== undefined) {
-      executeAIChain(gameId);
-    } else {
-      // After this AI's turn, check if next player is also an AI
-      executeAITurns(gameId);
-    }
-  }, delay);
+  room.aiExecuting = false;
+  
+  if (result.chainActive !== null && result.chainActive !== undefined) {
+    executeAIChain(gameId);
+  } else {
+    executeAITurns(gameId);
+  }
 }
 
-function executeAIChain(gameId) {
+async function executeAIChain(gameId) {
   const room = games.get(gameId);
   if (!room || room.game.gameOver || room.game.chainActive === null || room.aiExecuting) return;
   
-  room.aiExecuting = true; // Issue #2: Set lock
-  const chainDelay = 800 + Math.random() * 700;
+  room.aiExecuting = true;
+  const chainDelay = 600 + Math.random() * 500;
+  await new Promise(r => setTimeout(r, chainDelay));
 
-  setTimeout(() => {
-    // Issue BUG-5: Check if game still exists (could be deleted by cleanup)
-    if (!games.has(gameId)) return;
-    const room = games.get(gameId);
-    if (!room || room.game.gameOver || room.game.chainActive === null) {
-      if (room) room.aiExecuting = false;
-      return;
-    }
-    const ai = getActiveAI(room, gameId);
-    if (!ai) {
-      room.aiExecuting = false;
-      return;
-    }
+  if (!games.has(gameId)) return;
+  if (!room || room.game.gameOver || room.game.chainActive === null) {
+    room.aiExecuting = false;
+    return;
+  }
+  const ai = getActiveAI(room, gameId);
+  if (!ai) { room.aiExecuting = false; return; }
 
-    let cont;
-    try {
-      cont = ai.chooseContinuation(room.game);
-    } catch (err) {
-      logAIError(gameId, ai.playerIndex, err.message, 'chooseContinuation');
-      cont = null;
-    }
-    if (!cont) {
-      room.game.endTurn();
-      io.to(gameId).emit('turn-ended', { state: room.game.getState() });
-      room.aiExecuting = false; // Issue #2: Release lock
-      // After ending chain, check if next player is also AI
-      executeAITurns(gameId);
-      return;
-    }
+  const { move: cont } = await chooseContinuationAsync(room.game, ai);
 
-    room.lastActivity = Date.now(); // Issue #1: Update activity
-    
-    const result = room.game.makeMove(cont.from, cont.to);
-    if (!result.valid) {
-      room.game.endTurn();
-      io.to(gameId).emit('turn-ended', { state: room.game.getState() });
-      room.aiExecuting = false; // Issue #2: Release lock
-      executeAITurns(gameId);
-      return;
-    }
+  if (!games.has(gameId)) return;
+  if (!cont) {
+    room.game.endTurn();
+    io.to(gameId).emit('turn-ended', { state: room.game.getState() });
+    room.aiExecuting = false;
+    executeAITurns(gameId);
+    return;
+  }
 
-    io.to(gameId).emit('move-made', {
+  room.lastActivity = Date.now();
+  
+  const result = room.game.makeMove(cont.from, cont.to);
+  if (!result.valid) {
+    room.game.endTurn();
+    io.to(gameId).emit('turn-ended', { state: room.game.getState() });
+    room.aiExecuting = false;
+    executeAITurns(gameId);
+    return;
+  }
+
+  io.to(gameId).emit('move-made', {
       from: cont.from,
       to: cont.to,
       captures: result.captures || [],
@@ -636,14 +616,13 @@ function executeAIChain(gameId) {
       return;
     }
 
-    room.aiExecuting = false; // Issue #2: Release lock
+    room.aiExecuting = false;
     
     if (result.chainActive !== null && result.chainActive !== undefined) {
       executeAIChain(gameId);
     } else {
       executeAITurns(gameId);
     }
-  }, chainDelay);
 }
 
 // Auto-cleanup stale games every 5 minutes (Issue #1: Improved with lastActivity)
