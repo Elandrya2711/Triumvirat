@@ -1038,7 +1038,11 @@ registerSocketEvent('reconnected', (data) => {
 
 registerSocketEvent('reconnect-failed', () => {
   localStorage.removeItem('triumvirat-session');
-  // Stay on lobby silently
+  // If we're on game screen, go back to lobby with message
+  if (document.getElementById('game').classList.contains('active')) {
+    showScreen('lobby');
+    showToast('⚠️ Spiel nicht mehr verfügbar (Server-Neustart). Bitte neu starten!');
+  }
 });
 
 registerSocketEvent('surrendered', (data) => {
@@ -1061,6 +1065,13 @@ registerSocketEvent('invalid-move', (data) => showToast(data.error || 'Ungültig
 registerSocketEvent('error-msg', (data) => showToast(data.message));
 registerSocketEvent('player-disconnected', (data) => {
   showToast(`${playerNames[data.playerIndex]} hat das Spiel verlassen`);
+});
+
+// Connection lost indicator
+socket.on('disconnect', () => {
+  if (document.getElementById('game').classList.contains('active')) {
+    showToast('🔌 Verbindung verloren — versuche Neuverbindung...');
+  }
 });
 
 // Resize handling (Issue #4: Track for cleanup)
