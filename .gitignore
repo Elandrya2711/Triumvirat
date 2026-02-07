@@ -5,3 +5,4 @@ __pycache__/
 .env
 chroma_db/
 *.log
+REVIEW-INTERNAL.md
