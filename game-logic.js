@@ -139,10 +139,22 @@ class Game {
     const moves = [];
     const player = this.currentPlayer;
 
+    // Check if any own marble is stuck in a corner — must move it first!
+    let forcedCornerMarble = null;
+    for (const corner of CORNERS) {
+      const cell = this.board[corner];
+      if (cell && cell.player === player) {
+        forcedCornerMarble = corner;
+        break;
+      }
+    }
+
     for (let i = 0; i < BOARD_SIZE; i++) {
       const cell = this.board[i];
       if (!cell || cell.player !== player) continue;
       if (forPos !== undefined && i !== forPos) continue;
+      // If a marble is forced out of corner, only allow moves for that marble
+      if (forcedCornerMarble !== null && i !== forcedCornerMarble) continue;
 
       // Simple moves to adjacent empty non-corner fields
       for (const adj of ADJACENCY[i]) {
@@ -173,9 +185,8 @@ class Game {
         captures.push({ pos: adj, marble: { ...target } });
       }
 
-      if (!CORNERS.includes(landing)) {
-        results.push({ from, to: landing, captures, isJump: true });
-      }
+      // Corners allowed as jump landing (but must be vacated next turn)
+      results.push({ from, to: landing, captures, isJump: true });
     }
   }
 
