@@ -41,10 +41,11 @@ function registerSocketEvent(event, handler) {
 function cleanupGameEvents() {
   animQueue = [];
   animLock = false;
-  moveTrails = {}; // Issue #12: Clear trails
+  animating = false;
+  animationData = null;
+  moveTrails = {};
   selectedPos = null;
   validTargets = [];
-  animationData = null;
   chainActive = null;
 }
 
