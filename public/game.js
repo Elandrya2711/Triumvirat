@@ -20,7 +20,7 @@ let chainActive = null; // position of marble in active chain jump
 
 // Animation state
 let animationData = null; // { fromPos, toPos, marble, progress, captures, onComplete }
-const ANIM_DURATION = 300; // ms per move
+const ANIM_DURATION = 900; // ms per move
 
 // Canvas setup
 const canvas = document.getElementById('board');
