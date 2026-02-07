@@ -865,6 +865,7 @@ function processAnimQueue() {
 
 // Issue #6: Updated to use queue with lock
 const handleMoveEvent = (data) => {
+  if (!gameId) return;  // Not in a game
   animQueue.push(data);
   if (!animLock) {
     processAnimQueue();
@@ -963,6 +964,7 @@ registerSocketEvent('turn-ended', (data) => {
 });
 
 registerSocketEvent('game-over', (data) => {
+  if (!gameId) return;  // Already left the game
   gameState = data.state;
   render();
   const overlay = document.getElementById('game-over-overlay');
@@ -1005,6 +1007,7 @@ registerSocketEvent('reconnect-failed', () => {
 });
 
 registerSocketEvent('surrendered', (data) => {
+  if (!gameId) return;  // Already left
   gameState = data.state;
   render();
   const overlay = document.getElementById('game-over-overlay');
