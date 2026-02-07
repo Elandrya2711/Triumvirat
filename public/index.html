@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Triumvirat</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Lobby Screen -->
+  <div id="lobby" class="screen active">
+    <div class="lobby-container">
+      <h1>⚔️ Triumvirat</h1>
+      <p class="subtitle">Ein taktisches Kugelspiel für 2-3 Spieler</p>
+      
+      <div class="lobby-section">
+        <h2>Neues Spiel erstellen</h2>
+        <input type="text" id="player-name" placeholder="Dein Name" maxlength="20">
+        <div class="player-count">
+          <label>Spieleranzahl:</label>
+          <button class="count-btn active" data-count="2">2 Spieler</button>
+          <button class="count-btn" data-count="3">3 Spieler</button>
+        </div>
+        <button id="create-btn" class="primary-btn">Spiel erstellen</button>
+      </div>
+
+      <div class="lobby-section">
+        <h2>Spiel beitreten</h2>
+        <input type="text" id="join-name" placeholder="Dein Name" maxlength="20">
+        <input type="text" id="game-code" placeholder="Spiel-Code" maxlength="8">
+        <button id="join-btn" class="primary-btn">Beitreten</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Waiting Screen -->
+  <div id="waiting" class="screen">
+    <div class="waiting-container">
+      <h2>Warte auf Mitspieler...</h2>
+      <div class="invite-link">
+        <p>Teile diesen Code:</p>
+        <div class="code-display" id="invite-code">---</div>
+        <button id="copy-btn" class="secondary-btn">📋 Code kopieren</button>
+      </div>
+      <div id="player-list" class="player-list"></div>
+      <p class="waiting-info" id="waiting-info">Warte auf <span id="needed-count">0</span> weitere Spieler...</p>
+    </div>
+  </div>
+
+  <!-- Game Screen -->
+  <div id="game" class="screen">
+    <div class="game-header">
+      <div class="game-info">
+        <span id="game-id-display" class="game-id"></span>
+        <span id="turn-display" class="turn-info"></span>
+      </div>
+      <div id="marble-counts" class="marble-counts"></div>
+    </div>
+    
+    <div class="board-container">
+      <canvas id="board" width="600" height="550"></canvas>
+    </div>
+
+    <div class="end-turn-container">
+      <button id="end-turn-btn" class="end-turn-btn hidden">✋ Zug beenden</button>
+    </div>
+    <div id="game-status" class="game-status"></div>
+    <div id="game-over-overlay" class="overlay hidden">
+      <div class="overlay-content">
+        <h2 id="winner-text"></h2>
+        <button id="new-game-btn" class="primary-btn">Neues Spiel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
