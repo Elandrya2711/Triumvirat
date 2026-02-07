@@ -536,8 +536,8 @@ function darkenColor(hex, percent) {
 // Input handling
 function getClickedPosition(e) {
   const rect = canvas.getBoundingClientRect();
-  const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
-  const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+  const x = (e.clientX ?? e.changedTouches?.[0]?.clientX ?? e.touches?.[0]?.clientX) - rect.left;
+  const y = (e.clientY ?? e.changedTouches?.[0]?.clientY ?? e.touches?.[0]?.clientY) - rect.top;
   const scaleX = (canvas.width / DPR) / rect.width;
   const scaleY = (canvas.height / DPR) / rect.height;
   const cx = x * scaleX;
@@ -558,9 +558,10 @@ function getClickedPosition(e) {
 }
 
 canvas.addEventListener('click', handleClick);
-canvas.addEventListener('touchstart', (e) => {
+canvas.addEventListener('touchend', (e) => {
   e.preventDefault();
-  handleClick(e);
+  const touch = e.changedTouches[0];
+  handleClick(touch);
 });
 
 function handleClick(e) {

@@ -26,6 +26,7 @@ body {
     url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="%23162014"/><rect width="1" height="1" x="0" y="0" fill="%23172115" opacity="0.5"/><rect width="1" height="1" x="2" y="2" fill="%23152013" opacity="0.5"/></svg>');
   color: var(--parchment);
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -257,6 +258,9 @@ input::placeholder { color: var(--wood-highlight); }
   display: flex;
   justify-content: center;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 canvas {
@@ -364,27 +368,34 @@ canvas {
 .toast.hidden { opacity: 0; pointer-events: none; }
 
 @media (max-width: 600px) {
+  body { align-items: flex-start; padding-top: 10px; }
+  
   h1 { font-size: 1.8em; letter-spacing: 1px; }
   h2 { font-size: 1.1em; }
   .subtitle { font-size: 0.95em; margin-bottom: 15px; }
   
-  .screen { padding: 10px; }
-  .lobby-section { padding: 15px; margin: 10px 0; }
+  .screen { padding: 8px; }
+  .lobby-section { padding: 15px; margin: 8px 0; }
   
   .code-display { font-size: 1.8em; padding: 10px 20px; }
   canvas { width: 100% !important; }
   
-  /* Game header compact */
-  .game-header { flex-direction: column; align-items: flex-start; gap: 5px; padding: 5px 0; }
-  .game-info { gap: 8px; }
-  .turn-info { font-size: 0.95em; padding: 4px 10px; }
-  .marble-counts { gap: 8px; }
-  .marble-count { font-size: 0.9em; }
+  /* Game header compact — single row */
+  .game-header { flex-direction: row; align-items: center; gap: 6px; padding: 4px 0; flex-wrap: nowrap; justify-content: space-between; }
+  .game-info { gap: 6px; }
+  .game-id { display: none; }
+  .turn-info { font-size: 0.85em; padding: 3px 8px; white-space: nowrap; }
+  .marble-counts { gap: 6px; }
+  .marble-count { font-size: 0.85em; }
+  .marble-dot { width: 10px; height: 10px; }
   
-  /* Buttons stack vertically */
-  .end-turn-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
-  .end-turn-btn { font-size: 0.95em; padding: 10px 20px; }
-  .surrender-btn { margin-left: 0; }
+  /* Board takes max space */
+  .board-container { margin: 2px 0; }
+  
+  /* Buttons row — min 44px touch targets */
+  .end-turn-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; min-height: 44px; }
+  .end-turn-btn { font-size: 0.9em; padding: 10px 18px; min-height: 44px; }
+  .surrender-btn { margin-left: 0; padding: 8px 14px; font-size: 0.8em; min-height: 44px; }
   
   /* Player count buttons */
   .count-btn { padding: 8px 14px; font-size: 0.85em; margin: 3px; }
@@ -392,7 +403,7 @@ canvas {
   .ai-btn, .spectate-btn { margin-left: 0; display: block; width: 100%; margin-top: 8px; }
   
   /* Rules popup */
-  .rules-content { max-width: 95vw; padding: 20px 15px; }
+  .rules-content { max-width: 95vw; max-height: 85dvh; padding: 20px 15px; }
   .rules-text h3 { font-size: 1em; }
   .rules-text p, .rules-text ul { font-size: 0.9em; }
   
@@ -403,7 +414,7 @@ canvas {
   /* Input fields wider on mobile */
   input[type="text"] { max-width: 100%; }
   
-  .game-status { font-size: 0.9em; padding: 5px; }
+  .game-status { font-size: 0.85em; padding: 3px; min-height: 28px; }
   
   /* Difficulty slider full width */
   .difficulty-slider input[type="range"] { width: 90%; }
@@ -413,4 +424,5 @@ canvas {
   h1 { font-size: 1.5em; }
   .lobby-section { padding: 12px; }
   .primary-btn { padding: 10px 16px; font-size: 0.9em; }
+  .turn-info { font-size: 0.8em; }
 }
