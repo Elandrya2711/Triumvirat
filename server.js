@@ -94,7 +94,9 @@ io.on('connection', (socket) => {
       aiPlayers: [],
       createdAt: Date.now(),
       lastActivity: Date.now(), // Issue #1: Track activity for memory leak fix
-      aiExecuting: false // Issue #2: Lock for AI execution race condition
+      aiExecuting: false, // Issue #2: Lock for AI execution race condition
+      lastStarter: startingPlayer,
+      rematchVotes: null
     };
 
     if (isSpectate) {
@@ -428,6 +430,59 @@ io.on('connection', (socket) => {
     socket.playerIndex = null;
     // Leave room AFTER emitting so client gets the events
     process.nextTick(() => socket.leave(oldGameId));
+  });
+
+  // Rematch: vote to play again with rotated starting player
+  socket.on('rematch', () => {
+    const room = games.get(socket.gameId);
+    if (!room || !room.game.gameOver) return;
+    if (socket.playerIndex === null || socket.playerIndex === -1) return;
+
+    if (!room.rematchVotes) room.rematchVotes = new Set();
+    room.rematchVotes.add(socket.playerIndex);
+
+    // Notify all players about the vote
+    io.to(socket.gameId).emit('rematch-vote', {
+      player: socket.playerIndex,
+      playerName: room.players.find(p => p.index === socket.playerIndex)?.name || 'Spieler',
+      votes: Array.from(room.rematchVotes),
+      needed: room.vsAI ? 1 : room.players.filter(p => !p.id.startsWith('ai-')).length
+    });
+
+    // Check if all human players voted
+    const humanPlayers = room.players.filter(p => !p.id.startsWith('ai-'));
+    const allVoted = humanPlayers.every(p => room.rematchVotes.has(p.index));
+
+    if (allVoted) {
+      // Rotate starting player
+      const lastStarter = room.lastStarter !== undefined ? room.lastStarter : room.game.winner || 0;
+      const newStarter = (lastStarter + 1) % room.numPlayers;
+      room.lastStarter = newStarter;
+
+      // Create fresh game
+      room.game = new Game(room.numPlayers, newStarter);
+      room.rematchVotes = null;
+      room.aiExecuting = false;
+      room.lastActivity = Date.now();
+
+      // Reset AI move histories
+      for (const ai of room.aiPlayers) {
+        ai.moveHistory = [];
+        ai.bestChain = null;
+      }
+
+      io.to(socket.gameId).emit('rematch-start', {
+        state: room.game.getState(),
+        players: room.players.map(p => ({ name: p.name, index: p.index }))
+      });
+
+      // Trigger AI if it's AI's turn
+      if (room.vsAI) {
+        executeAITurns(socket.gameId);
+      }
+
+      console.log(`Rematch in game ${socket.gameId} (starter: player ${newStarter})`);
+    }
   });
 
   // Leave game (spectator or player wanting to quit without surrender)

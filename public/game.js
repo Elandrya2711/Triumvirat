@@ -802,6 +802,8 @@ document.getElementById('new-game-btn').addEventListener('click', () => {
   if (gameId) socket.emit('leave-game');
   cleanupGameEvents(); // Issue #4: Cleanup events when leaving game
   document.getElementById('game-over-overlay').classList.add('hidden');
+  document.getElementById('rematch-btn').classList.add('hidden');
+  document.getElementById('rematch-status').classList.add('hidden');
   showScreen('lobby');
   gameId = null;
   gameState = null;
@@ -810,6 +812,26 @@ document.getElementById('new-game-btn').addEventListener('click', () => {
   chainActive = null;
   moveTrails = {};
   localStorage.removeItem('triumvirat-session');
+});
+
+// Rematch button
+document.getElementById('rematch-btn').addEventListener('click', () => {
+  if (soloMode) {
+    // Solo: restart directly with same settings
+    document.getElementById('game-over-overlay').classList.add('hidden');
+    document.getElementById('rematch-btn').classList.add('hidden');
+    if (soloAIWorker) { soloAIWorker.terminate(); soloAIWorker = null; }
+    const name = playerNames[0] || 'Spieler';
+    const diff = soloAIConfig?.[0]?.difficulty || 3;
+    soloMode = false;
+    soloGame = null;
+    startSoloGame(name, numPlayers, diff);
+    return;
+  }
+  socket.emit('rematch');
+  const btn = document.getElementById('rematch-btn');
+  btn.textContent = '⏳ Warte auf Gegner...';
+  btn.disabled = true;
 });
 
 function saveSession() {
@@ -1043,6 +1065,14 @@ registerSocketEvent('game-over', (data) => {
   localStorage.removeItem('triumvirat-session');
   // Issue #12: Clear trails after game over
   setTimeout(() => { moveTrails = {}; }, 3000);
+  // Show rematch button for online games
+  if (!soloMode) {
+    const rematchBtn = document.getElementById('rematch-btn');
+    rematchBtn.classList.remove('hidden');
+    rematchBtn.textContent = '🔄 Revanche';
+    rematchBtn.disabled = false;
+    document.getElementById('rematch-status').classList.add('hidden');
+  }
 });
 
 registerSocketEvent('reconnected', (data) => {
@@ -1090,6 +1120,42 @@ registerSocketEvent('surrendered', (data) => {
   }
   overlay.classList.remove('hidden');
   localStorage.removeItem('triumvirat-session');
+  // No rematch after surrender (surrendering player already left the room)
+});
+
+registerSocketEvent('rematch-vote', (data) => {
+  const status = document.getElementById('rematch-status');
+  status.classList.remove('hidden');
+  if (data.votes.length < data.needed) {
+    status.textContent = `${data.playerName} will Revanche! (${data.votes.length}/${data.needed})`;
+  }
+});
+
+registerSocketEvent('rematch-start', (data) => {
+  // Reset game state for rematch
+  gameState = data.state;
+  chainActive = null;
+  selectedPos = null;
+  validTargets = [];
+  moveTrails = {};
+  
+  // Update player names from server
+  if (data.players) {
+    for (const p of data.players) {
+      playerNames[p.index] = p.name;
+    }
+  }
+  
+  document.getElementById('game-over-overlay').classList.add('hidden');
+  document.getElementById('rematch-btn').classList.add('hidden');
+  document.getElementById('rematch-status').classList.add('hidden');
+  
+  render();
+  updateTurnDisplay();
+  updateEndTurnButton();
+  updateStatus(gameState.currentPlayer === myPlayerIndex ? 'Du bist dran!' : 'Warte auf den Gegner...');
+  saveSession();
+  showToast('🔄 Revanche!');
 });
 
 registerSocketEvent('not-your-turn', () => showToast('Nicht dein Zug!'));
@@ -1574,8 +1640,11 @@ function soloShowGameOver() {
   }
   overlay.classList.remove('hidden');
   
-  // Cleanup
-  if (soloAIWorker) { soloAIWorker.terminate(); soloAIWorker = null; }
+  // Show rematch button for solo mode too (instant restart)
+  const rematchBtn = document.getElementById('rematch-btn');
+  rematchBtn.classList.remove('hidden');
+  rematchBtn.textContent = '🔄 Nochmal';
+  rematchBtn.disabled = false;
 }
 
 // Override surrender for solo mode
