@@ -332,6 +332,12 @@ canvas {
   font-family: 'Cinzel', serif;
 }
 
+.rematch-status {
+  color: #ccc;
+  font-size: 0.9em;
+  margin-bottom: 10px;
+}
+
 /* Toast */
 .rules-content {
   max-width: 500px;
