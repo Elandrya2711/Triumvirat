@@ -21,6 +21,7 @@ let soloMode = false; // true = local game, no server
 let soloGame = null;  // local Game instance (solo mode)
 let soloAIWorker = null; // Web Worker for AI
 let soloAIConfig = null; // { playerIndex, name, difficulty, moveHistory }
+let lastStarter = null; // Track who started last game for rotation
 
 // Animation state
 let animationData = null;
@@ -1151,7 +1152,16 @@ function startSoloGame(playerName, numP, difficulty) {
   const { Game, getBoardLayout, ADJACENCY: adj } = self.GameLogic;
   
   soloMode = true;
-  soloGame = new Game(numP);
+  // Rotate starting player: first game = random, subsequent = rotate
+  // In 2-player mode, only players 0 and 1 exist (not 2)
+  let starter;
+  if (lastStarter === null) {
+    starter = Math.floor(Math.random() * numP);
+  } else {
+    starter = (lastStarter + 1) % numP;
+  }
+  lastStarter = starter;
+  soloGame = new Game(numP, starter);
   gameId = 'solo-' + Math.random().toString(36).substr(2, 6);
   myPlayerIndex = 0;
   numPlayers = numP;
@@ -1189,8 +1199,16 @@ function startSoloGame(playerName, numP, difficulty) {
   document.getElementById('game-id-display').textContent = '🎮 Solo';
   resizeCanvas();
   updateTurnDisplay();
-  updateStatus('Wähle eine Kugel aus!');
   document.getElementById('surrender-btn').textContent = '🏳️ Aufgeben';
+  
+  // If AI starts first, trigger AI move; otherwise prompt human
+  const starterAI = soloAIConfig.find(a => a.playerIndex === soloGame.currentPlayer);
+  if (starterAI) {
+    updateStatus('🤖 ' + starterAI.name + ' ist dran...');
+    setTimeout(() => soloTriggerAI(), 500);
+  } else {
+    updateStatus('Wähle eine Kugel aus!');
+  }
   
   // Don't save to localStorage for solo games (no reconnect needed)
 }
@@ -1214,7 +1232,14 @@ function startSoloSpectate(numP, difficulty) {
   const { Game, getBoardLayout, ADJACENCY: adj } = self.GameLogic;
   
   soloMode = true;
-  soloGame = new Game(numP);
+  let starter;
+  if (lastStarter === null) {
+    starter = Math.floor(Math.random() * numP);
+  } else {
+    starter = (lastStarter + 1) % numP;
+  }
+  lastStarter = starter;
+  soloGame = new Game(numP, starter);
   gameId = 'spectate-' + Math.random().toString(36).substr(2, 6);
   myPlayerIndex = -1; // Spectator
   numPlayers = numP;
@@ -1362,6 +1387,46 @@ function soloTriggerAI() {
     return;
   }
   
+  // Check if AI should surrender: its largest marble < smallest enemy marble → can never capture
+  const aiMarbles = soloGame.board.filter(c => c && c.player === currentPlayer);
+  const enemyMarbles = soloGame.board.filter(c => c && c.player !== currentPlayer);
+  if (aiMarbles.length > 0 && enemyMarbles.length > 0) {
+    const aiMaxSize = Math.max(...aiMarbles.map(m => m.size));
+    const enemyMinSize = Math.min(...enemyMarbles.map(m => m.size));
+    if (aiMaxSize < enemyMinSize) {
+      // AI surrenders — remove all its marbles (same as server surrender logic)
+      for (let i = 0; i < soloGame.board.length; i++) {
+        if (soloGame.board[i] && soloGame.board[i].player === currentPlayer) {
+          soloGame.board[i] = null;
+        }
+      }
+      if (soloGame.playerMarbles) soloGame.playerMarbles[currentPlayer] = [];
+      soloGame._checkGameEnd();
+      
+      if (!soloGame.gameOver) {
+        // Advance to next non-eliminated player
+        soloGame.chainActive = null;
+        soloGame.lastJumpedOver = null;
+        soloGame.currentPlayer = (soloGame.currentPlayer + 1) % soloGame.numPlayers;
+        soloGame._skipEliminatedPlayers();
+        soloGame._checkGameEnd();
+      }
+      
+      gameState = soloGame.getState();
+      showToast(`${aiConf.name} gibt auf — keine Chance mehr! 🏳️`);
+      render();
+      updateTurnDisplay();
+      
+      if (soloGame.gameOver) {
+        soloShowGameOver();
+        return;
+      }
+      // Continue with next player
+      soloTriggerAI();
+      return;
+    }
+  }
+
   // Delay for natural feel
   const delay = 800 + Math.random() * 700;
   setTimeout(() => {
