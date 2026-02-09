@@ -1653,11 +1653,15 @@ document.getElementById('surrender-btn').addEventListener('click', (e) => {
   e.stopImmediatePropagation();
   if (confirm('Wirklich aufgeben?')) {
     if (soloAIWorker) { soloAIWorker.terminate(); soloAIWorker = null; }
-    soloMode = false;
-    soloGame = null;
-    gameId = null;
-    gameState = null;
-    showScreen('lobby');
+    // Show game-over overlay instead of going to lobby
+    const overlay = document.getElementById('game-over-overlay');
+    const winnerText = document.getElementById('winner-text');
+    winnerText.textContent = '🏳️ Du hast aufgegeben!';
+    overlay.classList.remove('hidden');
+    const rematchBtn = document.getElementById('rematch-btn');
+    rematchBtn.classList.remove('hidden');
+    rematchBtn.textContent = '🔄 Nochmal';
+    rematchBtn.disabled = false;
   }
 }, true); // capture phase — runs before the original handler
 
