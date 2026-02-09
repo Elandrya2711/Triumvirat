@@ -100,10 +100,13 @@ function getStartPositions(corner) {
 }
 
 class Game {
-  constructor(numPlayers = 3) {
+  constructor(numPlayers = 3, startingPlayer = null) {
     this.numPlayers = numPlayers;
     this.board = new Array(BOARD_SIZE).fill(null);
-    this.currentPlayer = 0;
+    // Random starting player if not specified, constrained to active player indices
+    this.currentPlayer = (startingPlayer !== null && startingPlayer !== undefined)
+      ? startingPlayer % numPlayers
+      : Math.floor(Math.random() * numPlayers);
     this.gameOver = false;
     this.winner = null;
     this.moveHistory = [];

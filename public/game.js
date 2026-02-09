@@ -21,6 +21,7 @@ let soloMode = false; // true = local game, no server
 let soloGame = null;  // local Game instance (solo mode)
 let soloAIWorker = null; // Web Worker for AI
 let soloAIConfig = null; // { playerIndex, name, difficulty, moveHistory }
+let lastStarter = null; // Track who started last game for rotation
 
 // Animation state
 let animationData = null;
@@ -1151,7 +1152,16 @@ function startSoloGame(playerName, numP, difficulty) {
   const { Game, getBoardLayout, ADJACENCY: adj } = self.GameLogic;
   
   soloMode = true;
-  soloGame = new Game(numP);
+  // Rotate starting player: first game = random, subsequent = rotate
+  // In 2-player mode, only players 0 and 1 exist (not 2)
+  let starter;
+  if (lastStarter === null) {
+    starter = Math.floor(Math.random() * numP);
+  } else {
+    starter = (lastStarter + 1) % numP;
+  }
+  lastStarter = starter;
+  soloGame = new Game(numP, starter);
   gameId = 'solo-' + Math.random().toString(36).substr(2, 6);
   myPlayerIndex = 0;
   numPlayers = numP;
@@ -1214,7 +1224,14 @@ function startSoloSpectate(numP, difficulty) {
   const { Game, getBoardLayout, ADJACENCY: adj } = self.GameLogic;
   
   soloMode = true;
-  soloGame = new Game(numP);
+  let starter;
+  if (lastStarter === null) {
+    starter = Math.floor(Math.random() * numP);
+  } else {
+    starter = (lastStarter + 1) % numP;
+  }
+  lastStarter = starter;
+  soloGame = new Game(numP, starter);
   gameId = 'spectate-' + Math.random().toString(36).substr(2, 6);
   myPlayerIndex = -1; // Spectator
   numPlayers = numP;
