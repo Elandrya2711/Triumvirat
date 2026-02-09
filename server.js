@@ -425,11 +425,15 @@ io.on('connection', (socket) => {
     }
     
     console.log(`Player ${surrenderedPlayer} surrendered in game ${socket.gameId}`);
-    const oldGameId = socket.gameId;
-    socket.gameId = null;
-    socket.playerIndex = null;
-    // Leave room AFTER emitting so client gets the events
-    process.nextTick(() => socket.leave(oldGameId));
+    
+    // In vs-AI games, keep player in room for rematch possibility
+    if (!room.vsAI) {
+      const oldGameId = socket.gameId;
+      socket.gameId = null;
+      socket.playerIndex = null;
+      process.nextTick(() => socket.leave(oldGameId));
+    }
+    // In vs-AI: player stays in room, can rematch
   });
 
   // Rematch: vote to play again with rotated starting player
