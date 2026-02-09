@@ -784,17 +784,17 @@ document.getElementById('surrender-btn').addEventListener('click', () => {
   if (confirm(msg)) {
     if (isSpectator) {
       socket.emit('leave-game');
+      cleanupGameEvents();
+      localStorage.removeItem('triumvirat-session');
+      gameId = null;
+      gameState = null;
+      showScreen('lobby');
     } else {
       socket.emit('surrender');
+      localStorage.removeItem('triumvirat-session');
+      // Don't go to lobby — the 'surrendered' event will show game-over overlay
+      // Server removes the player from the room, so we just wait for the event
     }
-    cleanupGameEvents(); // Issue #4: Cleanup when leaving game
-    localStorage.removeItem('triumvirat-session');
-    gameId = null;
-    gameState = null;
-    selectedPos = null;
-    validTargets = [];
-    chainActive = null;
-    showScreen('lobby');
   }
 });
 
@@ -1120,7 +1120,12 @@ registerSocketEvent('surrendered', (data) => {
   }
   overlay.classList.remove('hidden');
   localStorage.removeItem('triumvirat-session');
-  // No rematch after surrender (surrendering player already left the room)
+  // Show rematch button (works for vs-AI since player stays in room)
+  const rematchBtn = document.getElementById('rematch-btn');
+  rematchBtn.classList.remove('hidden');
+  rematchBtn.textContent = '🔄 Revanche';
+  rematchBtn.disabled = false;
+  document.getElementById('rematch-status').classList.add('hidden');
 });
 
 registerSocketEvent('rematch-vote', (data) => {
