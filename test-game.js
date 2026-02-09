@@ -33,9 +33,48 @@ test('Board initialization — 12 marbles for 2 players', () => {
   assert(count === 12, `Expected 12 marbles, got ${count}`);
 });
 
-test('Player 0 starts', () => {
-  const g = new Game(3);
+test('Player 0 starts when specified', () => {
+  const g = new Game(3, 0);
   assert(g.currentPlayer === 0, `Expected player 0, got ${g.currentPlayer}`);
+});
+
+test('Starting player parameter works for all players', () => {
+  for (let p = 0; p < 3; p++) {
+    const g = new Game(3, p);
+    assert(g.currentPlayer === p, `Expected player ${p}, got ${g.currentPlayer}`);
+  }
+  for (let p = 0; p < 2; p++) {
+    const g = new Game(2, p);
+    assert(g.currentPlayer === p, `Expected player ${p}, got ${g.currentPlayer}`);
+  }
+});
+
+test('Random starting player is within bounds', () => {
+  for (let i = 0; i < 50; i++) {
+    const g3 = new Game(3);
+    assert(g3.currentPlayer >= 0 && g3.currentPlayer < 3, `3p: got ${g3.currentPlayer}`);
+    const g2 = new Game(2);
+    assert(g2.currentPlayer >= 0 && g2.currentPlayer < 2, `2p: got ${g2.currentPlayer}`);
+  }
+});
+
+test('Starting player rotation logic', () => {
+  // Simulate rotation: 0 -> 1 -> 2 -> 0 (3 players)
+  for (let numP of [2, 3]) {
+    let lastStarter = null;
+    for (let round = 0; round < numP * 2; round++) {
+      let starter;
+      if (lastStarter === null) {
+        starter = 0; // Simulate first game picking 0
+      } else {
+        starter = (lastStarter + 1) % numP;
+      }
+      lastStarter = starter;
+      const g = new Game(numP, starter);
+      assert(g.currentPlayer === starter, `Round ${round}: expected ${starter}, got ${g.currentPlayer}`);
+      assert(g.currentPlayer < numP, `Starter ${g.currentPlayer} >= numPlayers ${numP}`);
+    }
+  }
 });
 
 test('Corner positions occupied at start', () => {
@@ -112,7 +151,7 @@ test('Simple move works', () => {
 });
 
 test('Turn advances after simple move', () => {
-  const g = new Game(3);
+  const g = new Game(3, 0);
   assert(g.currentPlayer === 0, 'Should start as player 0');
   const moves = g.getValidMoves();
   const simpleMove = moves.find(m => !m.isJump);
