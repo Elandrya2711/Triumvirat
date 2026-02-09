@@ -721,6 +721,117 @@ test('Chain jump: lastJumpedOver prevents back-jump', () => {
   assert(enemyJump, 'Should be able to jump over enemy at 5');
 });
 
+// === REMATCH / GAME RESTART TESTS ===
+
+test('Rematch: new Game reuses board layout correctly', () => {
+  // Simulate a rematch: create game, play it, create new game with rotated starter
+  const g1 = new Game(3, 0);
+  assert(g1.currentPlayer === 0, 'First game starts with player 0');
+  
+  // "Play" the game (make a few moves)
+  const moves = g1.getValidMoves();
+  if (moves.length > 0) g1.makeMove(moves[0].from, moves[0].to);
+  
+  // Rematch with rotated starter
+  const g2 = new Game(3, 1);
+  assert(g2.currentPlayer === 1, 'Rematch starts with player 1');
+  assert(g2.gameOver === false, 'Rematch game is not over');
+  assert(g2.moveHistory.length === 0, 'Rematch has empty move history');
+  
+  // Board should be fresh
+  let marbleCount = 0;
+  for (const cell of g2.board) { if (cell) marbleCount++; }
+  assert(marbleCount === 18, `Fresh board should have 18 marbles, got ${marbleCount}`);
+});
+
+test('Rematch: rotation works for 2-player mode', () => {
+  // Simulate rotation: 0 → 1 → 0 → 1
+  const starters = [];
+  let lastStarter = Math.floor(Math.random() * 2); // random first
+  starters.push(lastStarter);
+  for (let i = 0; i < 5; i++) {
+    lastStarter = (lastStarter + 1) % 2;
+    starters.push(lastStarter);
+    const g = new Game(2, lastStarter);
+    assert(g.currentPlayer === lastStarter, `Round ${i}: expected ${lastStarter}`);
+    assert(g.currentPlayer < 2, `2p mode: starter ${g.currentPlayer} must be < 2`);
+  }
+  // Verify alternation
+  for (let i = 1; i < starters.length; i++) {
+    assert(starters[i] !== starters[i-1], `Starters should alternate: ${starters}`);
+  }
+});
+
+test('Rematch: rotation works for 3-player mode', () => {
+  const starters = [];
+  let lastStarter = 0;
+  for (let i = 0; i < 6; i++) {
+    lastStarter = (lastStarter + 1) % 3;
+    starters.push(lastStarter);
+    const g = new Game(3, lastStarter);
+    assert(g.currentPlayer === lastStarter, `Round ${i}: expected ${lastStarter}`);
+  }
+  // Should cycle: 1,2,0,1,2,0
+  assert(starters[0] === 1 && starters[1] === 2 && starters[2] === 0, `3p rotation: ${starters}`);
+});
+
+test('Rematch: each new game has independent state', () => {
+  const g1 = new Game(2, 0);
+  // Mess up g1
+  g1.board[0] = null;
+  g1.gameOver = true;
+  g1.winner = 1;
+  
+  // New game should be unaffected
+  const g2 = new Game(2, 1);
+  assert(g2.board[0] !== null, 'New game board should be fresh');
+  assert(g2.gameOver === false, 'New game should not be over');
+  assert(g2.winner === null, 'New game should have no winner');
+});
+
+test('Rematch: startingPlayer wraps with modulo', () => {
+  // Edge case: what if someone passes a large number
+  const g = new Game(3, 5); // 5 % 3 = 2
+  assert(g.currentPlayer === 2, `5 % 3 should give player 2, got ${g.currentPlayer}`);
+  
+  const g2 = new Game(2, 7); // 7 % 2 = 1
+  assert(g2.currentPlayer === 1, `7 % 2 should give player 1, got ${g2.currentPlayer}`);
+});
+
+test('Rematch: getValidMoves works for non-zero starting player', () => {
+  for (let p = 0; p < 3; p++) {
+    const g = new Game(3, p);
+    const moves = g.getValidMoves();
+    assert(moves.length > 0, `Player ${p} should have valid moves at start`);
+    // Verify moves belong to the starting player
+    for (const m of moves) {
+      const marble = g.board[m.from];
+      assert(marble && marble.player === p, `Move from ${m.from} should be player ${p}'s marble`);
+    }
+  }
+});
+
+test('Rematch: full game cycle simulation', () => {
+  // Play a quick game, then rematch, verify state is clean
+  let lastStarter = null;
+  for (let round = 0; round < 3; round++) {
+    const starter = lastStarter === null ? 0 : (lastStarter + 1) % 2;
+    lastStarter = starter;
+    const g = new Game(2, starter);
+    
+    assert(g.currentPlayer === starter, `Round ${round}: starter should be ${starter}`);
+    assert(!g.gameOver, `Round ${round}: fresh game`);
+    
+    // Make a few moves
+    for (let i = 0; i < 3; i++) {
+      const moves = g.getValidMoves();
+      if (moves.length === 0) break;
+      g.makeMove(moves[0].from, moves[0].to);
+      if (g.gameOver) break;
+    }
+  }
+});
+
 // === SUMMARY ===
 
 console.log(`\n${'='.repeat(40)}`);
