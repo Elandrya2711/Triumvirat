@@ -1199,8 +1199,16 @@ function startSoloGame(playerName, numP, difficulty) {
   document.getElementById('game-id-display').textContent = '🎮 Solo';
   resizeCanvas();
   updateTurnDisplay();
-  updateStatus('Wähle eine Kugel aus!');
   document.getElementById('surrender-btn').textContent = '🏳️ Aufgeben';
+  
+  // If AI starts first, trigger AI move; otherwise prompt human
+  const starterAI = soloAIConfig.find(a => a.playerIndex === soloGame.currentPlayer);
+  if (starterAI) {
+    updateStatus('🤖 ' + starterAI.name + ' ist dran...');
+    setTimeout(() => soloTriggerAI(), 500);
+  } else {
+    updateStatus('Wähle eine Kugel aus!');
+  }
   
   // Don't save to localStorage for solo games (no reconnect needed)
 }
