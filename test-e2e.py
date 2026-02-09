@@ -241,3 +241,127 @@ def test_08_player_count_buttons(server, page: Page):
     btn_2.click()
     expect(btn_2).to_have_class("count-btn active")
     expect(btn_3).to_have_class("count-btn")
+
+
+def test_09_solo_rematch_after_surrender(server, page: Page):
+    """Test 9: Solo - Aufgeben → Nochmal → neues Spiel → erneut Aufgeben → Nochmal"""
+    page.goto(BASE_URL)
+    page.on("dialog", lambda dialog: dialog.accept())
+    
+    page.fill("#player-name", "TestPlayer")
+    page.click("#ai-btn")
+    expect(page.locator("#game")).to_have_class("screen active", timeout=3000)
+    
+    for round_num in range(3):
+        # Surrender
+        page.click("#surrender-btn")
+        expect(page.locator("#game-over-overlay")).not_to_have_class("hidden", timeout=2000)
+        expect(page.locator("#winner-text")).to_contain_text("aufgegeben")
+        
+        # Rematch button visible and clickable
+        rematch = page.locator("#rematch-btn")
+        expect(rematch).to_be_visible()
+        expect(rematch).to_be_enabled()
+        
+        # Click Nochmal
+        rematch.click()
+        
+        # Overlay disappears, game continues
+        expect(page.locator("#game-over-overlay")).to_have_class("overlay hidden", timeout=2000)
+        expect(page.locator("#game")).to_have_class("screen active")
+        
+        # Canvas still visible
+        expect(page.locator("#board")).to_be_visible()
+
+
+def test_10_pvp_rematch_after_surrender(server, browser_context):
+    """Test 10: PvP Online - Aufgeben → beide klicken Revanche → neues Spiel"""
+    p1 = browser_context.new_page()
+    p1.on("dialog", lambda d: d.accept())
+    p1.goto(BASE_URL)
+    p1.fill("#player-name", "Host")
+    p1.click("#create-btn")
+    
+    expect(p1.locator("#waiting")).to_have_class("screen active", timeout=2000)
+    game_code = p1.locator("#invite-code").inner_text()
+    
+    p2 = browser_context.new_page()
+    p2.on("dialog", lambda d: d.accept())
+    p2.goto(BASE_URL)
+    p2.fill("#join-name", "Guest")
+    p2.fill("#game-code", game_code)
+    p2.click("#join-btn")
+    
+    expect(p1.locator("#game")).to_have_class("screen active", timeout=5000)
+    expect(p2.locator("#game")).to_have_class("screen active", timeout=5000)
+    
+    # P1 surrenders
+    p1.click("#surrender-btn")
+    
+    # Both see overlay
+    expect(p1.locator("#game-over-overlay")).not_to_have_class("hidden", timeout=2000)
+    expect(p2.locator("#game-over-overlay")).not_to_have_class("hidden", timeout=2000)
+    
+    # Both see rematch button
+    expect(p1.locator("#rematch-btn")).to_be_visible()
+    expect(p2.locator("#rematch-btn")).to_be_visible()
+    
+    # P1 clicks rematch first — should show waiting status
+    p1.locator("#rematch-btn").click()
+    expect(p1.locator("#rematch-status")).not_to_have_class("hidden", timeout=2000)
+    
+    # P2 clicks rematch — game should restart
+    p2.locator("#rematch-btn").click()
+    
+    # Both overlays disappear
+    expect(p1.locator("#game-over-overlay")).to_have_class("overlay hidden", timeout=3000)
+    expect(p2.locator("#game-over-overlay")).to_have_class("overlay hidden", timeout=3000)
+    
+    # Both still on game screen
+    expect(p1.locator("#game")).to_have_class("screen active")
+    expect(p2.locator("#game")).to_have_class("screen active")
+    
+    p1.close()
+    p2.close()
+
+
+def test_11_pvp_rematch_multiple_rounds(server, browser_context):
+    """Test 11: PvP - Mehrere Runden Revanche hintereinander"""
+    p1 = browser_context.new_page()
+    p1.on("dialog", lambda d: d.accept())
+    p1.goto(BASE_URL)
+    p1.fill("#player-name", "Host")
+    p1.click("#create-btn")
+    
+    expect(p1.locator("#waiting")).to_have_class("screen active", timeout=2000)
+    game_code = p1.locator("#invite-code").inner_text()
+    
+    p2 = browser_context.new_page()
+    p2.on("dialog", lambda d: d.accept())
+    p2.goto(BASE_URL)
+    p2.fill("#join-name", "Guest")
+    p2.fill("#game-code", game_code)
+    p2.click("#join-btn")
+    
+    expect(p1.locator("#game")).to_have_class("screen active", timeout=5000)
+    expect(p2.locator("#game")).to_have_class("screen active", timeout=5000)
+    
+    for round_num in range(3):
+        # Alternate who surrenders
+        surrenderer = p1 if round_num % 2 == 0 else p2
+        surrenderer.click("#surrender-btn")
+        
+        # Both see overlay
+        expect(p1.locator("#game-over-overlay")).not_to_have_class("hidden", timeout=2000)
+        expect(p2.locator("#game-over-overlay")).not_to_have_class("hidden", timeout=2000)
+        
+        # Both vote rematch
+        p1.locator("#rematch-btn").click()
+        p2.locator("#rematch-btn").click()
+        
+        # Both overlays disappear
+        expect(p1.locator("#game-over-overlay")).to_have_class("overlay hidden", timeout=3000)
+        expect(p2.locator("#game-over-overlay")).to_have_class("overlay hidden", timeout=3000)
+    
+    p1.close()
+    p2.close()
