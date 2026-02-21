@@ -1,4 +1,9 @@
 node_modules
+npm-debug.log
 .git
-REVIEW.md
-test-game.js
+.gitignore
+test-*.js
+test-*.py
+SCALING-PLAN.md
+.claude
+README.md

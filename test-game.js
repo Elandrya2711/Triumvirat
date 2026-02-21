@@ -832,6 +832,84 @@ test('Rematch: full game cycle simulation', () => {
   }
 });
 
+// === CODE REVIEW CLEANUP TESTS ===
+
+test('[Cleanup] playerMarbles consistent after chain jump with capture', () => {
+  // Verifies Fix #2: playerMarbles tracking in chain-continuation branch of makeMove
+  // Chain: player 0 large at 7 jumps over own small at 4 → lands at 2 (chain starts)
+  //        then jumps over enemy at 5 → lands at 9 (captures)
+  const g = new Game(3);
+  g.board.fill(null);
+  g.board[7] = { player: 0, size: 3 };
+  g.board[4] = { player: 0, size: 1 };  // own marble to jump over
+  g.board[5] = { player: 1, size: 1 };  // enemy to capture in chain
+  g.board[20] = { player: 1, size: 1 }; // keep player 1 alive
+  g.board[25] = { player: 2, size: 1 };
+  g.board[26] = { player: 2, size: 1 };
+  g.playerMarbles = { 0: [7, 4], 1: [5, 20], 2: [25, 26] };
+  g.currentPlayer = 0;
+
+  // First jump (normal branch): 7 → 2 over own marble at 4
+  const r1 = g.makeMove(7, 2);
+  assert(r1.valid, 'First jump should be valid');
+  assert(r1.chainActive === 2, 'Chain should be active at landing pos 2');
+  assert(g.playerMarbles[0].includes(2), 'playerMarbles[0] should include landing pos 2');
+  assert(!g.playerMarbles[0].includes(7), 'playerMarbles[0] should not include old pos 7');
+  assert(g.playerMarbles[0].includes(4), 'Own marble at 4 should still be tracked');
+
+  // Second jump (chain-continuation branch, the fixed one): 2 → 9 over enemy at 5
+  const r2 = g.makeMove(2, 9);
+  assert(r2.valid, 'Chain jump over enemy should be valid');
+  assert(r2.captures.length === 1, 'Should capture enemy at 5');
+  assert(g.playerMarbles[0].includes(9), 'playerMarbles[0] should include landing pos 9');
+  assert(!g.playerMarbles[0].includes(2), 'playerMarbles[0] should not include intermediate pos 2');
+  assert(!g.playerMarbles[1].includes(5), 'Captured pos 5 should be removed from playerMarbles[1]');
+
+  // Full consistency: every tracked position must match the board exactly
+  for (let p = 0; p < 3; p++) {
+    for (const pos of g.playerMarbles[p]) {
+      assert(g.board[pos] !== null, `playerMarbles[${p}] pos ${pos} should be occupied on board`);
+      assert(g.board[pos].player === p, `playerMarbles[${p}] pos ${pos} should belong to player ${p}`);
+    }
+    const boardCount = g.board.filter(c => c && c.player === p).length;
+    assert(g.playerMarbles[p].length === boardCount,
+      `playerMarbles[${p}] length ${g.playerMarbles[p].length} should match board count ${boardCount}`);
+  }
+});
+
+test('[Cleanup] AI chooseMove refactor: chosen move is valid and history updated', () => {
+  // Verifies Fix #3: single _minimax pass still produces a valid move
+  const { AIPlayer } = require('./ai-player.js');
+  const g = new Game(2, 0);
+  const allMoves = g.getValidMoves();
+
+  const ai = new AIPlayer(0, 'test', 5); // difficulty 5: no randomness
+  const chosen = ai.chooseMove(g);
+
+  assert(chosen !== null, 'AI should return a move');
+  const isValid = allMoves.some(m => m.from === chosen.from && m.to === chosen.to);
+  assert(isValid, `Chosen move ${chosen.from}→${chosen.to} must be in valid moves list`);
+  assert(ai.moveHistory.length === 1, 'moveHistory should have 1 entry after first move');
+  assert(ai.moveHistory[0] === `${chosen.from}-${chosen.to}`, 'History entry should match chosen move');
+});
+
+test('[Cleanup] AI chooseMove refactor: always returns valid move across difficulties', () => {
+  // Verifies Fix #3: all difficulty levels still produce valid moves after refactor
+  const { AIPlayer } = require('./ai-player.js');
+  const g = new Game(2, 0);
+  const allMoves = g.getValidMoves();
+
+  for (let diff = 1; diff <= 5; diff++) {
+    for (let run = 0; run < 5; run++) {
+      const ai = new AIPlayer(0, 'test', diff);
+      const chosen = ai.chooseMove(g);
+      assert(chosen !== null, `Difficulty ${diff} run ${run}: AI should return a move`);
+      const isValid = allMoves.some(m => m.from === chosen.from && m.to === chosen.to);
+      assert(isValid, `Difficulty ${diff} run ${run}: move ${chosen.from}→${chosen.to} must be valid`);
+    }
+  }
+});
+
 // === SUMMARY ===
 
 console.log(`\n${'='.repeat(40)}`);

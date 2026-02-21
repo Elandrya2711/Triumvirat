@@ -2,6 +2,7 @@
 Playwright E2E Tests für Triumvirat Brettspiel
 Testet alle kritischen User-Flows im Browser
 """
+import os
 import pytest
 import subprocess
 import time
@@ -20,7 +21,7 @@ def server():
     process = subprocess.Popen(
         ["node", "server.js"],
         env={"PORT": str(TEST_PORT)},
-        cwd="/home/thilo/.openclaw/workspace/projects/triumvirat",
+        cwd=os.path.dirname(os.path.abspath(__file__)),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN)

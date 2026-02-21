@@ -70,36 +70,15 @@ class AIPlayer {
       }
     }
 
-    // Score each sequence with minimax
-    let best = -Infinity;
-    let bestSeqs = [];
-    let secondBest = -Infinity;
-    let secondSeqs = [];
-
+    // Score each sequence with minimax and apply repetition penalty in one pass
+    const scored = [];
     for (const seq of sequences) {
       const simGame = this._cloneGame(game);
       this._applySequence(simGame, seq);
       // After our move, it's opponent's turn — minimax from opponent perspective
-      const score = this._minimax(simGame, this.maxDepth - 1, -Infinity, Infinity, false);
+      const baseScore = this._minimax(simGame, this.maxDepth - 1, -Infinity, Infinity, false);
 
-      if (score > best) {
-        secondBest = best;
-        secondSeqs = bestSeqs;
-        best = score;
-        bestSeqs = [seq];
-      } else if (score === best) {
-        bestSeqs.push(seq);
-      } else if (score > secondBest) {
-        secondBest = score;
-        secondSeqs = [seq];
-      } else if (score === secondBest) {
-        secondSeqs.push(seq);
-      }
-    }
-
-    // Apply repetition penalty — discount sequences that repeat recent moves
-    const scored = [];
-    for (const seq of [bestSeqs, secondSeqs].flat()) {
+      // Apply repetition penalty — discount sequences that repeat recent moves
       const firstMove = seq[0];
       const moveKey = `${firstMove.from}-${firstMove.to}`;
       const reverseKey = `${firstMove.to}-${firstMove.from}`;
@@ -110,10 +89,6 @@ class AIPlayer {
           penalty += 25;  // Heavy penalty for repeating/reversing recent moves
         }
       }
-      // Re-evaluate with penalty
-      const simGame = this._cloneGame(game);
-      this._applySequence(simGame, seq);
-      const baseScore = this._minimax(simGame, this.maxDepth - 1, -Infinity, Infinity, false);
       scored.push({ seq, score: baseScore - penalty });
     }
     scored.sort((a, b) => b.score - a.score);

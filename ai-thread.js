@@ -40,8 +40,13 @@ function chooseMoveAsync(game, ai) {
         console.log(`[AI Thread] Timeout after ${AI_TIMEOUT_MS}ms for player ${ai.playerIndex}`);
         // Fallback: pick first valid move
         const moves = game.getValidMoves();
-        resolve({ 
-          move: moves.length > 0 ? moves[0] : null, 
+        const fallbackMove = moves.length > 0 ? moves[0] : null;
+        if (fallbackMove) {
+          ai.moveHistory.push(`${fallbackMove.from}-${fallbackMove.to}`);
+          if (ai.moveHistory.length > 12) ai.moveHistory.shift();
+        }
+        resolve({
+          move: fallbackMove,
           moveHistory: ai.moveHistory,
           plannedChain: [],
           elapsed: AI_TIMEOUT_MS,

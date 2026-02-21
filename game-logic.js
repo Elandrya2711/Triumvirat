@@ -231,7 +231,7 @@ class Game {
 
       const landing = getJumpLanding(from, adj);
       if (landing < 0 || landing >= BOARD_SIZE) continue;
-      if (this.board[landing] && landing !== from) continue;
+      if (this.board[landing]) continue;
 
       const captures = [];
       if (target.player !== marble.player) {
@@ -280,8 +280,22 @@ class Game {
       const marble = { ...this.board[from] };
       this.board[from] = null;
       this.board[to] = marble;
+
+      // Issue #9: Update playerMarbles tracking for chain jumps
+      const player = marble.player;
+      const idx = this.playerMarbles[player].indexOf(from);
+      if (idx >= 0) {
+        this.playerMarbles[player][idx] = to;
+      }
+
+      // Issue #9: Remove captured marbles from tracking
       for (const cap of move.captures) {
         this.board[cap.pos] = null;
+        const capPlayer = cap.marble.player;
+        const capIdx = this.playerMarbles[capPlayer].indexOf(cap.pos);
+        if (capIdx >= 0) {
+          this.playerMarbles[capPlayer].splice(capIdx, 1);
+        }
       }
       this.lastJumpedOver = this._getJumpedPosition(from, to);
       this.moveHistory.push({ from, to, captures: move.captures, player: this.currentPlayer });

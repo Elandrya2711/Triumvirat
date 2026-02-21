@@ -70,27 +70,37 @@ async function startServer() {
   const games = new Map();
   
   io.on('connection', (socket) => {
-    socket.on('create-game', ({ playerName, numPlayers, vsAI, difficulty }) => {
+    socket.on('create-game', ({ playerName, numPlayers, vsAI, spectate, difficulty }) => {
       const gameId = Math.random().toString(36).substr(2, 8);
       const effectivePlayers = numPlayers || 3;
       const startingPlayer = Math.floor(Math.random() * effectivePlayers);
       const game = new Game(effectivePlayers, startingPlayer);
       const diff = difficulty || 3;
-      
+      const isSpectate = !!(spectate);
+
       const room = {
         game,
         numPlayers: effectivePlayers,
         players: [],
         spectators: [socket.id],
         started: false,
-        vsAI: !!vsAI,
+        vsAI: !!(vsAI || isSpectate),
+        spectateMode: isSpectate,
         aiPlayers: [],
         lastStarter: startingPlayer,
         rematchVotes: null,
         aiExecuting: false
       };
-      
-      if (vsAI) {
+
+      if (isSpectate) {
+        for (let i = 0; i < effectivePlayers; i++) {
+          const name = `🤖 Bot ${i + 1}`;
+          const ai = new AIPlayer(i, name, diff);
+          room.aiPlayers.push(ai);
+          room.players.push({ id: `ai-${i}`, name, index: i });
+        }
+        room.started = true;
+      } else if (vsAI) {
         room.players.push({ id: socket.id, name: playerName || 'Spieler 1', index: 0 });
         for (let i = 1; i < effectivePlayers; i++) {
           const name = `🤖 Bot ${i}`;
@@ -102,24 +112,25 @@ async function startServer() {
       } else {
         room.players.push({ id: socket.id, name: playerName || 'Spieler 1', index: 0 });
       }
-      
+
       games.set(gameId, room);
       socket.join(gameId);
       socket.gameId = gameId;
-      socket.playerIndex = vsAI ? 0 : 0;
-      
+      socket.playerIndex = isSpectate ? -1 : 0;
+
       socket.emit('game-created', {
         gameId,
-        playerIndex: 0,
+        playerIndex: isSpectate ? -1 : 0,
         numPlayers: effectivePlayers,
         boardLayout: getBoardLayout(),
         adjacency: ADJACENCY,
         colors: PLAYER_COLORS,
         playerNames: PLAYER_NAMES,
-        vsAI: !!vsAI
+        vsAI: !!(vsAI || isSpectate),
+        spectateMode: isSpectate
       });
-      
-      if (vsAI) {
+
+      if (vsAI || isSpectate) {
         socket.emit('game-start', {
           state: room.game.getState(),
           players: room.players.map(p => ({ name: p.name, index: p.index }))
@@ -498,7 +509,9 @@ async function runTests() {
     // Skip this test and do a simpler vote test below.
     c1.disconnect();
     c2.disconnect();
-    passed++; // Skip gracefully
+    // TODO: PvP rematch test incomplete — test server removes surrendering player from room,
+    // so PvP rematch vote flow can't be tested without aligning test server surrender logic
+    // with production server (which keeps players in room for rematch).
   });
   
   // --- Test: Rematch vote event is emitted ---
@@ -642,6 +655,28 @@ async function runTests() {
       lastStarter = rm.state.currentPlayer;
     }
     
+    c.disconnect();
+  });
+
+  // --- Test: Spectate mode creates all-AI game and auto-starts ---
+  await asyncTest('Spectate mode: game-created with spectateMode=true and auto-starts', async () => {
+    const c = createClient();
+
+    const startPromise = waitFor(c, 'game-start');
+    c.emit('create-game', { spectate: true, numPlayers: 2, difficulty: 1 });
+    const created = await waitFor(c, 'game-created');
+
+    assert(created.spectateMode === true, 'game-created should have spectateMode=true');
+    assert(created.playerIndex === -1, 'Spectator should have playerIndex=-1');
+    assert(created.vsAI === true, 'Spectate game should be vsAI=true');
+
+    const start = await startPromise;
+    assert(start.state !== undefined, 'game-start should include state');
+    const marbles = start.state.board.filter(c => c !== null).length;
+    assert(marbles === 12, `2-player board should have 12 marbles, got ${marbles}`);
+    assert(start.players.length === 2, `Should have 2 AI players, got ${start.players.length}`);
+    assert(start.players.every(p => p.name.includes('Bot')), 'All players should be bots');
+
     c.disconnect();
   });
 

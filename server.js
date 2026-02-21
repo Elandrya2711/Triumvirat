@@ -75,7 +75,7 @@ io.on('connection', (socket) => {
     difficulty = validateNumber(difficulty, 1, 5, 3);
     
     const gameId = uuidv4().substring(0, 8);
-    const isSpectate = false; // Spectate mode disabled
+    const isSpectate = !!(spectate);
     const effectivePlayers = numPlayers || 3;
     // Random starting player for each new game
     const startingPlayer = Math.floor(Math.random() * effectivePlayers);
