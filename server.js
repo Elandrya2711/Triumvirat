@@ -75,7 +75,9 @@ io.on('connection', (socket) => {
     difficulty = validateNumber(difficulty, 1, 5, 3);
     
     const gameId = uuidv4().substring(0, 8);
-    const isSpectate = !!(spectate);
+    // Security hardening: do not allow clients to create autonomous AI-only spectate games.
+    // The public spectate button runs fully client-side and does not require server resources.
+    const isSpectate = false;
     const effectivePlayers = numPlayers || 3;
     // Random starting player for each new game
     const startingPlayer = Math.floor(Math.random() * effectivePlayers);
