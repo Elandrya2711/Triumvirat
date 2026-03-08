@@ -22,6 +22,7 @@ let soloGame = null;  // local Game instance (solo mode)
 let soloAIWorker = null; // Web Worker for AI
 let soloAIConfig = null; // { playerIndex, name, difficulty, moveHistory }
 let lastStarter = null; // Track who started last game for rotation
+let reconnectToken = null;
 
 // Animation state
 let animationData = null;
@@ -786,12 +787,14 @@ document.getElementById('surrender-btn').addEventListener('click', () => {
       socket.emit('leave-game');
       cleanupGameEvents();
       localStorage.removeItem('triumvirat-session');
+      reconnectToken = null;
       gameId = null;
       gameState = null;
       showScreen('lobby');
     } else {
       socket.emit('surrender');
       localStorage.removeItem('triumvirat-session');
+      reconnectToken = null;
       // Don't go to lobby — the 'surrendered' event will show game-over overlay
       // Server removes the player from the room, so we just wait for the event
     }
@@ -812,6 +815,7 @@ document.getElementById('new-game-btn').addEventListener('click', () => {
   chainActive = null;
   moveTrails = {};
   localStorage.removeItem('triumvirat-session');
+  reconnectToken = null;
 });
 
 // Rematch button
@@ -837,7 +841,10 @@ document.getElementById('rematch-btn').addEventListener('click', () => {
 function saveSession() {
   if (!gameId) return;
   localStorage.setItem('triumvirat-session', JSON.stringify({
-    gameId, playerIndex: myPlayerIndex, playerName: document.getElementById('player-name').value || 'Spieler'
+    gameId,
+    playerIndex: myPlayerIndex,
+    playerName: document.getElementById('player-name').value || 'Spieler',
+    reconnectToken
   }));
 }
 
@@ -848,7 +855,12 @@ function tryReconnect() {
   try {
     const session = JSON.parse(saved);
     if (session.gameId) {
-      socket.emit('reconnect-game', { gameId: session.gameId, playerIndex: session.playerIndex, playerName: session.playerName });
+      socket.emit('reconnect-game', {
+        gameId: session.gameId,
+        playerIndex: session.playerIndex,
+        playerName: session.playerName,
+        reconnectToken: session.reconnectToken
+      });
     }
   } catch (e) { localStorage.removeItem('triumvirat-session'); }
 }
@@ -864,6 +876,7 @@ socket.on('connect', () => {
 registerSocketEvent('game-created', (data) => {
   gameId = data.gameId;
   myPlayerIndex = data.playerIndex;
+  reconnectToken = data.reconnectToken || null;
   numPlayers = data.numPlayers;
   boardLayout = data.boardLayout;
   adjacency = data.adjacency;
@@ -883,6 +896,7 @@ registerSocketEvent('game-created', (data) => {
 registerSocketEvent('game-joined', (data) => {
   gameId = data.gameId;
   myPlayerIndex = data.playerIndex;
+  reconnectToken = data.reconnectToken || null;
   numPlayers = data.numPlayers;
   boardLayout = data.boardLayout;
   adjacency = data.adjacency;
@@ -1063,6 +1077,7 @@ registerSocketEvent('game-over', (data) => {
   }
   overlay.classList.remove('hidden');
   localStorage.removeItem('triumvirat-session');
+  reconnectToken = null;
   // Issue #12: Clear trails after game over
   setTimeout(() => { moveTrails = {}; }, 3000);
   // Show rematch button for online games
@@ -1079,6 +1094,7 @@ registerSocketEvent('reconnected', (data) => {
   if (soloMode) return; // Solo mode doesn't use server
   gameId = data.gameId;
   myPlayerIndex = data.playerIndex;
+  reconnectToken = data.reconnectToken || null;
   numPlayers = data.numPlayers;
   boardLayout = data.boardLayout;
   adjacency = data.adjacency;
@@ -1100,6 +1116,7 @@ registerSocketEvent('reconnected', (data) => {
 registerSocketEvent('reconnect-failed', () => {
   if (soloMode) return; // Ignore in solo mode
   localStorage.removeItem('triumvirat-session');
+  reconnectToken = null;
   // If we're on game screen, go back to lobby with message
   if (document.getElementById('game').classList.contains('active')) {
     showScreen('lobby');
@@ -1120,6 +1137,7 @@ registerSocketEvent('surrendered', (data) => {
   }
   overlay.classList.remove('hidden');
   localStorage.removeItem('triumvirat-session');
+  reconnectToken = null;
   // Show rematch button (works for vs-AI since player stays in room)
   const rematchBtn = document.getElementById('rematch-btn');
   rematchBtn.classList.remove('hidden');

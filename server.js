@@ -109,7 +109,7 @@ io.on('connection', (socket) => {
       }
       room.ai = room.aiPlayers[0];
     } else if (vsAI) {
-      room.players.push({ id: socket.id, name: playerName || 'Spieler 1', index: 0 });
+      room.players.push({ id: socket.id, name: playerName || 'Spieler 1', index: 0, reconnectToken: uuidv4(), disconnected: false });
       const numAI = effectivePlayers - 1;
       for (let i = 0; i < numAI; i++) {
         const name = numAI > 1 ? `🤖 Mako-Bot ${i + 1}` : '🤖 Mako-Bot';
@@ -119,7 +119,7 @@ io.on('connection', (socket) => {
       }
       room.ai = room.aiPlayers[0];
     } else {
-      room.players.push({ id: socket.id, name: playerName || 'Spieler 1', index: 0 });
+      room.players.push({ id: socket.id, name: playerName || 'Spieler 1', index: 0, reconnectToken: uuidv4(), disconnected: false });
     }
 
     games.set(gameId, room);
@@ -131,6 +131,7 @@ io.on('connection', (socket) => {
     socket.emit('game-created', {
       gameId,
       playerIndex: isSpectate ? -1 : 0,
+      reconnectToken: !isSpectate ? room.players.find(p => p.index === 0)?.reconnectToken : null,
       numPlayers: effectivePlayers,
       boardLayout: getBoardLayout(),
       adjacency: ADJACENCY,
@@ -190,7 +191,7 @@ io.on('connection', (socket) => {
     }
 
     const playerIndex = room.players.length;
-    room.players.push({ id: socket.id, name: playerName || `Spieler ${playerIndex + 1}`, index: playerIndex });
+    room.players.push({ id: socket.id, name: playerName || `Spieler ${playerIndex + 1}`, index: playerIndex, reconnectToken: uuidv4(), disconnected: false });
     room.lastActivity = Date.now(); // Issue #1: Update activity
 
     socket.join(gameId);
@@ -200,6 +201,7 @@ io.on('connection', (socket) => {
     socket.emit('game-joined', {
       gameId,
       playerIndex,
+      reconnectToken: room.players.find(p => p.index === playerIndex)?.reconnectToken,
       numPlayers: room.numPlayers,
       boardLayout: getBoardLayout(),
       adjacency: ADJACENCY,
@@ -316,11 +318,12 @@ io.on('connection', (socket) => {
   });
 
   // Reconnect to existing game
-  socket.on('reconnect-game', ({ gameId, playerIndex, playerName }) => {
+  socket.on('reconnect-game', ({ gameId, playerIndex, playerName, reconnectToken }) => {
     // Input validation (Issue #3)
     gameId = sanitizeString(gameId, 12, '');
     playerName = sanitizeString(playerName, 20, 'Spieler');
     playerIndex = validateNumber(playerIndex, -1, 2, -1);
+    reconnectToken = sanitizeString(reconnectToken, 64, '');
     
     const room = games.get(gameId);
     if (!room || !room.started) {
@@ -352,7 +355,7 @@ io.on('connection', (socket) => {
 
     // Update the player's socket ID
     const player = room.players.find(p => p.index === playerIndex && !p.id.startsWith('ai-'));
-    if (!player) {
+    if (!player || !player.reconnectToken || player.reconnectToken !== reconnectToken || !player.disconnected) {
       socket.emit('reconnect-failed');
       return;
     }
@@ -367,6 +370,7 @@ io.on('connection', (socket) => {
     socket.emit('reconnected', {
       gameId,
       playerIndex,
+      reconnectToken: player.reconnectToken,
       numPlayers: room.numPlayers,
       boardLayout: getBoardLayout(),
       adjacency: ADJACENCY,
