@@ -8,6 +8,30 @@ const path = require('path');
 
 const WORKER_PATH = path.join(__dirname, 'ai-worker.js');
 const AI_TIMEOUT_MS = 2000;
+const MAX_CONCURRENT_AI_WORKERS = Math.max(1, Number(process.env.MAX_CONCURRENT_AI_WORKERS) || 4);
+
+let activeWorkers = 0;
+const workerQueue = [];
+
+function runWithWorker(task) {
+  return new Promise((resolve) => {
+    const run = () => {
+      activeWorkers += 1;
+
+      task().then(resolve).finally(() => {
+        activeWorkers -= 1;
+        const next = workerQueue.shift();
+        if (next) next();
+      });
+    };
+
+    if (activeWorkers < MAX_CONCURRENT_AI_WORKERS) {
+      run();
+    } else {
+      workerQueue.push(run);
+    }
+  });
+}
 
 // Serialize game state for transfer to worker
 function serializeGame(game) {
@@ -29,7 +53,7 @@ function serializeGame(game) {
  * Returns: { move, moveHistory, plannedChain, elapsed } or null on timeout/error.
  */
 function chooseMoveAsync(game, ai) {
-  return new Promise((resolve) => {
+  return runWithWorker(() => new Promise((resolve) => {
     const worker = new Worker(WORKER_PATH);
     let settled = false;
 
@@ -98,14 +122,14 @@ function chooseMoveAsync(game, ai) {
         moveHistory: ai.moveHistory
       }
     });
-  });
+  }));
 }
 
 /**
  * Run AI continuation selection in a worker thread.
  */
 function chooseContinuationAsync(game, ai) {
-  return new Promise((resolve) => {
+  return runWithWorker(() => new Promise((resolve) => {
     const worker = new Worker(WORKER_PATH);
     let settled = false;
 
@@ -149,7 +173,7 @@ function chooseContinuationAsync(game, ai) {
         plannedChain: ai._plannedChain || []
       }
     });
-  });
+  }));
 }
 
 module.exports = { chooseMoveAsync, chooseContinuationAsync };
