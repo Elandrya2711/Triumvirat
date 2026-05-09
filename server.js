@@ -9,8 +9,6 @@ const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const { Game, getBoardLayout, ADJACENCY } = require('./game-logic');
-const { AIPlayer } = require('./ai-player');
-const { chooseMoveAsync, chooseContinuationAsync } = require('./ai-thread');
 
 const app = express();
 const server = http.createServer(app);
@@ -121,6 +119,29 @@ function cleanupRateLimits(limits) {
 const PLAYER_COLORS = ['#e74c3c', '#2ecc71', '#3498db']; // Red, Green, Blue
 const PLAYER_NAMES = ['Rot', 'Grün', 'Blau'];
 
+function markPlayerDisconnected(socket, gameId) {
+  const room = games.get(gameId);
+  if (!room) return;
+
+  io.to(gameId).emit('player-disconnected', {
+    playerIndex: socket.playerIndex
+  });
+
+  const player = room.players.find(p => p.id === socket.id);
+  if (player) player.disconnected = true;
+
+  const humanPlayers = room.players.filter(p => !p.id.startsWith('ai-'));
+  const allDisconnected = humanPlayers.every(p => p.disconnected);
+  const activeHumans = humanPlayers.filter(p => !p.disconnected).length;
+  const age = Date.now() - (room.createdAt || 0);
+
+  // Delete if: (all humans disconnected AND game over) OR (no active humans AND game older than 2min)
+  if ((allDisconnected && room.game.gameOver) || (activeHumans === 0 && age > 2 * 60 * 1000)) {
+    games.delete(gameId);
+    console.log(`Game ${gameId} deleted (disconnected cleanup)`);
+  }
+}
+
 io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
 
@@ -131,7 +152,7 @@ io.on('connection', (socket) => {
       socket.emit('error-msg', { message: 'Ungültige Anfrage' });
       return;
     }
-    let { playerName, numPlayers, vsAI, difficulty } = data;
+    let { playerName, numPlayers } = data;
     // Rate limiting (Issue #13)
     if (!checkRateLimit(createGameLimits, getClientKey(socket), MAX_GAMES_PER_MINUTE)) {
       socket.emit('error-msg', { message: 'Zu viele Spiele erstellt. Bitte warte einen Moment.' });
@@ -141,91 +162,49 @@ io.on('connection', (socket) => {
     // Input validation (Issue #3)
     playerName = sanitizeString(playerName, 20, 'Spieler');
     numPlayers = validateNumber(numPlayers, 2, 3, 3);
-    difficulty = validateNumber(difficulty, 1, 5, 3);
     
     const gameId = uuidv4().substring(0, 8);
-    // Security hardening: do not allow clients to create autonomous AI-only spectate games.
-    // The public spectate button runs fully client-side and does not require server resources.
-    const isSpectate = false;
     const effectivePlayers = numPlayers || 3;
     // Random starting player for each new game
     const startingPlayer = Math.floor(Math.random() * effectivePlayers);
     const game = new Game(effectivePlayers, startingPlayer);
-    const diff = difficulty;
     
     const room = {
       game,
       numPlayers: effectivePlayers,
       players: [],
-      spectators: [socket.id],
+      spectators: [],
       started: false,
-      vsAI: !!(vsAI || isSpectate),
-      spectateMode: isSpectate,
-      ai: null,
-      aiPlayers: [],
+      vsAI: false,
+      spectateMode: false,
       createdAt: Date.now(),
       lastActivity: Date.now(), // Issue #1: Track activity for memory leak fix
-      aiExecuting: false, // Issue #2: Lock for AI execution race condition
       lastStarter: startingPlayer,
       rematchVotes: null
     };
 
-    if (isSpectate) {
-      // All players are AI
-      for (let i = 0; i < effectivePlayers; i++) {
-        const name = effectivePlayers > 2 ? `🤖 Mako-Bot ${i + 1}` : (i === 0 ? '🤖 Mako-Bot Rot' : '🤖 Mako-Bot Grün');
-        const ai = new AIPlayer(i, name, diff);
-        room.aiPlayers.push(ai);
-        room.players.push({ id: `ai-${i}`, name: ai.name, index: i });
-      }
-      room.ai = room.aiPlayers[0];
-    } else if (vsAI) {
-      room.players.push({ id: socket.id, name: playerName || 'Spieler 1', index: 0, reconnectToken: uuidv4(), disconnected: false });
-      const numAI = effectivePlayers - 1;
-      for (let i = 0; i < numAI; i++) {
-        const name = numAI > 1 ? `🤖 Mako-Bot ${i + 1}` : '🤖 Mako-Bot';
-        const ai = new AIPlayer(i + 1, name, diff);
-        room.aiPlayers.push(ai);
-        room.players.push({ id: `ai-${i}`, name: ai.name, index: i + 1 });
-      }
-      room.ai = room.aiPlayers[0];
-    } else {
-      room.players.push({ id: socket.id, name: playerName || 'Spieler 1', index: 0, reconnectToken: uuidv4(), disconnected: false });
-    }
+    room.players.push({ id: socket.id, name: playerName || 'Spieler 1', index: 0, reconnectToken: uuidv4(), disconnected: false });
 
     games.set(gameId, room);
 
     socket.join(gameId);
     socket.gameId = gameId;
-    socket.playerIndex = isSpectate ? -1 : 0;
+    socket.playerIndex = 0;
 
     socket.emit('game-created', {
       gameId,
-      playerIndex: isSpectate ? -1 : 0,
-      reconnectToken: !isSpectate ? room.players.find(p => p.index === 0)?.reconnectToken : null,
+      playerIndex: 0,
+      reconnectToken: room.players.find(p => p.index === 0)?.reconnectToken,
       numPlayers: effectivePlayers,
       boardLayout: getBoardLayout(),
       adjacency: ADJACENCY,
       colors: PLAYER_COLORS,
       playerNames: PLAYER_NAMES,
-      vsAI: !!(vsAI || isSpectate),
-      spectateMode: isSpectate
+      vsAI: false,
+      spectateMode: false
     });
 
-    // Auto-start AI and spectate games immediately
-    if (vsAI || isSpectate) {
-      room.started = true;
-      socket.emit('game-start', {
-        state: room.game.getState(),
-        players: room.players.map(p => ({ name: p.name, index: p.index }))
-      });
-      // In spectate mode, kick off AI turns
-      if (isSpectate) {
-        executeAITurns(gameId);
-      }
-    }
-
-    console.log(`Game ${gameId} created (${effectivePlayers} players${vsAI ? ', vs AI' : ''})`);
+    console.log(`Game ${gameId} created (${effectivePlayers} players)`);
   });
 
   // Join existing game
@@ -359,8 +338,6 @@ io.on('connection', (socket) => {
         winnerName: winnerPlayer ? winnerPlayer.name : PLAYER_NAMES[room.game.winner],
         state: room.game.getState()
       });
-    } else if (room.vsAI && result.chainActive === null) {
-      executeAITurns(socket.gameId);
     }
   });
 
@@ -386,10 +363,6 @@ io.on('connection', (socket) => {
       state: room.game.getState()
     });
 
-    // Trigger AI turn after human ends chain
-    if (room.vsAI) {
-      executeAITurns(socket.gameId);
-    }
   });
 
   // Reconnect to existing game
@@ -527,7 +500,7 @@ io.on('connection', (socket) => {
       player: socket.playerIndex,
       playerName: room.players.find(p => p.index === socket.playerIndex)?.name || 'Spieler',
       votes: Array.from(room.rematchVotes),
-      needed: room.vsAI ? 1 : room.players.filter(p => !p.id.startsWith('ai-')).length
+      needed: room.players.filter(p => !p.id.startsWith('ai-')).length
     });
 
     // Check if all human players voted
@@ -543,36 +516,40 @@ io.on('connection', (socket) => {
       // Create fresh game
       room.game = new Game(room.numPlayers, newStarter);
       room.rematchVotes = null;
-      room.aiExecuting = false;
       room.lastActivity = Date.now();
-
-      // Reset AI move histories
-      for (const ai of room.aiPlayers) {
-        ai.moveHistory = [];
-        ai.bestChain = null;
-      }
 
       io.to(socket.gameId).emit('rematch-start', {
         state: room.game.getState(),
         players: room.players.map(p => ({ name: p.name, index: p.index }))
       });
 
-      // Trigger AI if it's AI's turn
-      if (room.vsAI) {
-        executeAITurns(socket.gameId);
-      }
-
       console.log(`Rematch in game ${socket.gameId} (starter: player ${newStarter})`);
     }
   });
 
-  // Leave game (spectator or player wanting to quit without surrender)
+  // Leave game; active human players are handled like disconnects to preserve match state.
   socket.on('leave-game', () => {
     const gid = socket.gameId;
     if (!gid) return;
-    
-    // Issue #14: Remove spectator from room.spectators to prevent memory leak
+
     const room = games.get(gid);
+    if (!room) {
+      socket.gameId = null;
+      socket.playerIndex = null;
+      return;
+    }
+
+    const player = room.players.find(p => p.id === socket.id && !p.id.startsWith('ai-'));
+    if (player && !room.game.gameOver) {
+      markPlayerDisconnected(socket, gid);
+      socket.leave(gid);
+      socket.gameId = null;
+      socket.playerIndex = null;
+      console.log(`Player ${player.index} left game ${gid} and was marked disconnected`);
+      return;
+    }
+
+    // Issue #14: Remove spectator from room.spectators to prevent memory leak
     if (room && room.spectators) {
       const idx = room.spectators.indexOf(socket.id);
       if (idx >= 0) room.spectators.splice(idx, 1);
@@ -586,182 +563,10 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     if (socket.gameId) {
-      const room = games.get(socket.gameId);
-      if (room) {
-        io.to(socket.gameId).emit('player-disconnected', {
-          playerIndex: socket.playerIndex
-        });
-        // Mark player as disconnected but keep in list for reconnect
-        const player = room.players.find(p => p.id === socket.id);
-        if (player) player.disconnected = true;
-        // Issue #1: Improved cleanup logic
-        const humanPlayers = room.players.filter(p => !p.id.startsWith('ai-'));
-        const allDisconnected = humanPlayers.every(p => p.disconnected);
-        const activeHumans = humanPlayers.filter(p => !p.disconnected).length;
-        const age = Date.now() - (room.createdAt || 0);
-        
-        // Delete if: (all humans disconnected AND game over) OR (no active humans AND game older than 2min)
-        if ((allDisconnected && room.game.gameOver) || (activeHumans === 0 && age > 2 * 60 * 1000)) {
-          games.delete(socket.gameId);
-          console.log(`Game ${socket.gameId} deleted (disconnected cleanup)`);
-        }
-      }
+      markPlayerDisconnected(socket, socket.gameId);
     }
   });
 });
-
-// Issue CODE-2: Structured AI error logging
-function logAIError(gameId, playerIndex, error, context) {
-  console.error(`[AI ERROR] Game ${gameId}, Player ${playerIndex}: ${error} (${context})`);
-}
-
-// Find the AI player for the current turn (Issue #11: Error logging)
-function getActiveAI(room, gameId) {
-  const currentPlayer = room.game.currentPlayer;
-  const ai = room.aiPlayers.find(ai => ai.playerIndex === currentPlayer) || null;
-  
-  if (ai === null && room.vsAI) {
-    logAIError(gameId, currentPlayer, `Expected AI but none found! aiPlayers: [${room.aiPlayers.map(a => a.playerIndex)}]`, 'getActiveAI');
-  }
-  
-  return ai;
-}
-
-// Execute AI turns — non-blocking via Worker Threads (Issue #2: AI lock)
-async function executeAITurns(gameId) {
-  const room = games.get(gameId);
-  if (!room || !room.vsAI || room.game.gameOver || room.aiExecuting) return;
-  
-  const ai = getActiveAI(room, gameId);
-  if (!ai) return; // It's the human's turn
-
-  room.aiExecuting = true; // Issue #2: Set lock
-  const delay = 800 + Math.random() * 700;
-  await new Promise(r => setTimeout(r, delay));
-
-  // Check game still exists after delay
-  if (!games.has(gameId)) return;
-  if (room.game.gameOver) { room.aiExecuting = false; return; }
-
-  const { move, elapsed, timedOut } = await chooseMoveAsync(room.game, ai);
-  
-  // Check game still exists after worker
-  if (!games.has(gameId)) return;
-  if (room.game.gameOver) { room.aiExecuting = false; return; }
-  
-  if (timedOut) console.log(`[AI] Player ${ai.playerIndex} timed out, using fallback move`);
-  if (elapsed) console.log(`[AI] Player ${ai.playerIndex} computed in ${elapsed}ms`);
-
-  if (!move) {
-    logAIError(gameId, room.game.currentPlayer, 'No moves available', 'chooseMove');
-    room.aiExecuting = false;
-    return;
-  }
-
-  room.lastActivity = Date.now();
-  
-  const result = room.game.makeMove(move.from, move.to);
-  if (!result.valid) {
-    logAIError(gameId, ai.playerIndex, `Invalid move ${move.from}→${move.to}: ${result.error}`, 'makeMove');
-    room.aiExecuting = false;
-    return;
-  }
-
-  io.to(gameId).emit('move-made', {
-    from: move.from,
-    to: move.to,
-    captures: result.captures || [],
-    chainActive: result.chainActive,
-    continuationMoves: result.continuationMoves || [],
-    state: room.game.getState()
-  });
-
-  if (room.game.gameOver) {
-    const winnerPlayer = room.players.find(p => p.index === room.game.winner);
-    io.to(gameId).emit('game-over', {
-      winner: room.game.winner,
-      winnerName: winnerPlayer ? winnerPlayer.name : PLAYER_NAMES[room.game.winner],
-      state: room.game.getState()
-    });
-    room.aiExecuting = false;
-    return;
-  }
-
-  room.aiExecuting = false;
-  
-  if (result.chainActive !== null && result.chainActive !== undefined) {
-    executeAIChain(gameId);
-  } else {
-    executeAITurns(gameId);
-  }
-}
-
-async function executeAIChain(gameId) {
-  const room = games.get(gameId);
-  if (!room || room.game.gameOver || room.game.chainActive === null || room.aiExecuting) return;
-  
-  room.aiExecuting = true;
-  const chainDelay = 600 + Math.random() * 500;
-  await new Promise(r => setTimeout(r, chainDelay));
-
-  if (!games.has(gameId)) return;
-  if (!room || room.game.gameOver || room.game.chainActive === null) {
-    room.aiExecuting = false;
-    return;
-  }
-  const ai = getActiveAI(room, gameId);
-  if (!ai) { room.aiExecuting = false; return; }
-
-  const { move: cont } = await chooseContinuationAsync(room.game, ai);
-
-  if (!games.has(gameId)) return;
-  if (!cont) {
-    room.game.endTurn();
-    io.to(gameId).emit('turn-ended', { state: room.game.getState() });
-    room.aiExecuting = false;
-    executeAITurns(gameId);
-    return;
-  }
-
-  room.lastActivity = Date.now();
-  
-  const result = room.game.makeMove(cont.from, cont.to);
-  if (!result.valid) {
-    room.game.endTurn();
-    io.to(gameId).emit('turn-ended', { state: room.game.getState() });
-    room.aiExecuting = false;
-    executeAITurns(gameId);
-    return;
-  }
-
-  io.to(gameId).emit('move-made', {
-      from: cont.from,
-      to: cont.to,
-      captures: result.captures || [],
-      chainActive: result.chainActive,
-      continuationMoves: result.continuationMoves || [],
-      state: room.game.getState()
-    });
-
-    if (room.game.gameOver) {
-      const winnerPlayer = room.players.find(p => p.index === room.game.winner);
-      io.to(gameId).emit('game-over', {
-        winner: room.game.winner,
-        winnerName: winnerPlayer ? winnerPlayer.name : PLAYER_NAMES[room.game.winner],
-        state: room.game.getState()
-      });
-      room.aiExecuting = false; // Issue #2: Release lock
-      return;
-    }
-
-    room.aiExecuting = false;
-    
-    if (result.chainActive !== null && result.chainActive !== undefined) {
-      executeAIChain(gameId);
-    } else {
-      executeAITurns(gameId);
-    }
-}
 
 // Auto-cleanup stale games every 5 minutes (Issue #1: Improved with lastActivity)
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
