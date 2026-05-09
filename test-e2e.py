@@ -20,7 +20,7 @@ def server():
     # Server starten
     process = subprocess.Popen(
         ["node", "server.js"],
-        env={"PORT": str(TEST_PORT)},
+        env={**os.environ, "PORT": str(TEST_PORT)},
         cwd=os.path.dirname(os.path.abspath(__file__)),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

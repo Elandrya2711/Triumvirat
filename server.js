@@ -14,7 +14,41 @@ const { chooseMoveAsync, chooseContinuationAsync } = require('./ai-thread');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+
+const configuredOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(origin => origin.trim())
+  .map(origin => {
+    if (!origin || origin === '*') return origin;
+    try { return new URL(origin).origin; } catch { return origin; }
+  })
+  .filter(Boolean);
+
+function isAllowedOrigin(origin, host) {
+  if (!origin) return true;
+  if (configuredOrigins.includes('*')) return true;
+
+  try {
+    const parsed = new URL(origin);
+    const normalizedOrigin = parsed.origin;
+    if (configuredOrigins.includes(normalizedOrigin)) return true;
+
+    // Browser WebSocket handshakes should come from the same site by default.
+    return host && parsed.host === host;
+  } catch {
+    return false;
+  }
+}
+
+const io = new Server(server, {
+  allowRequest: (req, callback) => {
+    if (isAllowedOrigin(req.headers.origin, req.headers.host)) {
+      callback(null, true);
+      return;
+    }
+    callback('origin not allowed', false);
+  }
+});
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -26,10 +60,12 @@ app.get('/ai-player.js', (req, res) => res.sendFile(path.join(__dirname, 'ai-pla
 const games = new Map();
 
 // Rate limiting for game creation and joining
-const createGameLimits = new Map(); // socket.id → { count, resetTime }
-const joinGameLimits = new Map(); // Issue SEC-2: Rate limit join attempts
+const createGameLimits = new Map(); // client key -> { count, resetTime }
+const joinGameLimits = new Map(); // client key -> { count, resetTime }
 const MAX_GAMES_PER_MINUTE = 5;
 const MAX_JOINS_PER_MINUTE = 20;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const TRUST_PROXY = process.env.TRUST_PROXY !== 'false';
 
 // Input sanitization helpers
 function sanitizeString(str, maxLen = 20, fallback = '') {
@@ -43,6 +79,45 @@ function validateNumber(num, min, max, fallback) {
   return n;
 }
 
+function getPayloadObject(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  return payload;
+}
+
+function getClientKey(socket) {
+  const forwardedFor = socket.handshake.headers['x-forwarded-for'];
+  if (TRUST_PROXY && typeof forwardedFor === 'string' && forwardedFor.trim()) {
+    return forwardedFor.split(',')[0].trim().replace(/^::ffff:/, '');
+  }
+  return (socket.handshake.address || socket.id).replace(/^::ffff:/, '');
+}
+
+function checkRateLimit(limits, key, maxCount) {
+  const now = Date.now();
+  const limit = limits.get(key) || { count: 0, resetTime: now + RATE_LIMIT_WINDOW_MS };
+
+  if (now > limit.resetTime) {
+    limit.count = 0;
+    limit.resetTime = now + RATE_LIMIT_WINDOW_MS;
+  }
+
+  if (limit.count >= maxCount) {
+    limits.set(key, limit);
+    return false;
+  }
+
+  limit.count++;
+  limits.set(key, limit);
+  return true;
+}
+
+function cleanupRateLimits(limits) {
+  const now = Date.now();
+  for (const [key, limit] of limits.entries()) {
+    if (now > limit.resetTime) limits.delete(key);
+  }
+}
+
 const PLAYER_COLORS = ['#e74c3c', '#2ecc71', '#3498db']; // Red, Green, Blue
 const PLAYER_NAMES = ['Rot', 'Grün', 'Blau'];
 
@@ -50,25 +125,19 @@ io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
 
   // Create a new game
-  socket.on('create-game', ({ playerName, numPlayers, vsAI, spectate, difficulty }) => {
-    // Rate limiting (Issue #13)
-    const now = Date.now();
-    const limit = createGameLimits.get(socket.id) || { count: 0, resetTime: now + 60000 };
-    
-    if (now > limit.resetTime) {
-      // Reset after 1 minute
-      limit.count = 0;
-      limit.resetTime = now + 60000;
+  socket.on('create-game', (payload) => {
+    const data = getPayloadObject(payload);
+    if (!data) {
+      socket.emit('error-msg', { message: 'Ungültige Anfrage' });
+      return;
     }
-    
-    if (limit.count >= MAX_GAMES_PER_MINUTE) {
+    let { playerName, numPlayers, vsAI, difficulty } = data;
+    // Rate limiting (Issue #13)
+    if (!checkRateLimit(createGameLimits, getClientKey(socket), MAX_GAMES_PER_MINUTE)) {
       socket.emit('error-msg', { message: 'Zu viele Spiele erstellt. Bitte warte einen Moment.' });
       return;
     }
-    
-    limit.count++;
-    createGameLimits.set(socket.id, limit);
-    
+
     // Input validation (Issue #3)
     playerName = sanitizeString(playerName, 20, 'Spieler');
     numPlayers = validateNumber(numPlayers, 2, 3, 3);
@@ -160,24 +229,19 @@ io.on('connection', (socket) => {
   });
 
   // Join existing game
-  socket.on('join-game', ({ gameId, playerName }) => {
-    // Issue SEC-2: Rate limiting for join attempts
-    const now = Date.now();
-    const limit = joinGameLimits.get(socket.id) || { count: 0, resetTime: now + 60000 };
-    
-    if (now > limit.resetTime) {
-      limit.count = 0;
-      limit.resetTime = now + 60000;
+  socket.on('join-game', (payload) => {
+    const data = getPayloadObject(payload);
+    if (!data) {
+      socket.emit('error-msg', { message: 'Ungültige Anfrage' });
+      return;
     }
-    
-    if (limit.count >= MAX_JOINS_PER_MINUTE) {
+    let { gameId, playerName } = data;
+    // Issue SEC-2: Rate limiting for join attempts
+    if (!checkRateLimit(joinGameLimits, getClientKey(socket), MAX_JOINS_PER_MINUTE)) {
       socket.emit('error-msg', { message: 'Zu viele Join-Versuche. Bitte warte einen Moment.' });
       return;
     }
-    
-    limit.count++;
-    joinGameLimits.set(socket.id, limit);
-    
+
     // Input validation (Issue #3)
     gameId = sanitizeString(gameId, 12, '');
     playerName = sanitizeString(playerName, 20, 'Spieler');
@@ -228,7 +292,10 @@ io.on('connection', (socket) => {
   });
 
   // Request valid moves for a position
-  socket.on('get-moves', ({ from }) => {
+  socket.on('get-moves', (payload) => {
+    const data = getPayloadObject(payload);
+    if (!data) return;
+    const { from } = data;
     const room = games.get(socket.gameId);
     if (!room || !room.started) return;
     
@@ -253,7 +320,13 @@ io.on('connection', (socket) => {
   });
 
   // Make a move
-  socket.on('make-move', ({ from, to }) => {
+  socket.on('make-move', (payload) => {
+    const data = getPayloadObject(payload);
+    if (!data) {
+      socket.emit('invalid-move', { error: 'Ungültige Anfrage' });
+      return;
+    }
+    const { from, to } = data;
     const room = games.get(socket.gameId);
     if (!room || !room.started) return;
 
@@ -320,7 +393,13 @@ io.on('connection', (socket) => {
   });
 
   // Reconnect to existing game
-  socket.on('reconnect-game', ({ gameId, playerIndex, playerName, reconnectToken }) => {
+  socket.on('reconnect-game', (payload) => {
+    const data = getPayloadObject(payload);
+    if (!data) {
+      socket.emit('reconnect-failed');
+      return;
+    }
+    let { gameId, playerIndex, playerName, reconnectToken } = data;
     // Input validation (Issue #3)
     gameId = sanitizeString(gameId, 12, '');
     playerName = sanitizeString(playerName, 20, 'Spieler');
@@ -506,10 +585,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    // Cleanup rate limiters (Issue #13, SEC-2)
-    createGameLimits.delete(socket.id);
-    joinGameLimits.delete(socket.id);
-    
     if (socket.gameId) {
       const room = games.get(socket.gameId);
       if (room) {
@@ -696,6 +771,9 @@ const FINISHED_GAME_TIMEOUT_MS = 5 * 60 * 1000;
 
 setInterval(() => {
   const now = Date.now();
+  cleanupRateLimits(createGameLimits);
+  cleanupRateLimits(joinGameLimits);
+
   for (const [id, room] of games.entries()) {
     const age = now - (room.createdAt || 0);
     const inactiveTime = now - (room.lastActivity || room.createdAt || 0);
