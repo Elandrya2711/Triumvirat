@@ -1,0 +1,36 @@
+name: build-deploy
+on:
+  push:
+    branches: [main]
+jobs:
+  build-deploy:
+    runs-on: docker
+    container:
+      image: docker:29-cli
+    steps:
+      - name: Checkout
+        run: |
+          apk add --no-cache git >/dev/null
+          git clone --depth 1 -b "$GITHUB_REF_NAME" "http://thilo:${CI_TOKEN}@git.mke.one/${GITHUB_REPOSITORY}.git" /workspace/src
+        env:
+          CI_TOKEN: ${{ secrets.CI_TOKEN }}
+      - name: Build und Push
+        run: |
+          TAG=$(echo "$GITHUB_SHA" | cut -c1-8)
+          echo "$CI_TOKEN" | docker login git.mke.one -u thilo --password-stdin
+          docker build -t "git.mke.one/thilo/triumvirat:$TAG" /workspace/src
+          docker push "git.mke.one/thilo/triumvirat:$TAG"
+          docker rmi "git.mke.one/thilo/triumvirat:$TAG" || true
+        env:
+          CI_TOKEN: ${{ secrets.CI_TOKEN }}
+      - name: Deploy ueber infra-Repo
+        run: |
+          TAG=$(echo "$GITHUB_SHA" | cut -c1-8)
+          git clone "http://thilo:${CI_TOKEN}@git.mke.one/thilo/infra.git" /workspace/infra
+          cd /workspace/infra
+          sed -i "s|image: git.mke.one/thilo/triumvirat:.*|image: git.mke.one/thilo/triumvirat:$TAG|" manifests/triumvirat/deployment.yaml
+          git config user.name "Forgejo Actions"
+          git config user.email "ci@mke.one"
+          git commit -am "triumvirat: Deploy $TAG" && git push || echo "keine Manifest-Aenderung"
+        env:
+          CI_TOKEN: ${{ secrets.CI_TOKEN }}
