@@ -12,7 +12,7 @@ jobs:
       - name: Checkout
         run: |
           apk add --no-cache git >/dev/null
-          git clone --depth 1 -b "$GITHUB_REF_NAME" "http://thilo:${CI_TOKEN}@git.mke.one/${GITHUB_REPOSITORY}.git" /workspace/src
+          git clone --depth 1 -b "$GITHUB_REF_NAME" "https://thilo:${CI_TOKEN}@git.mke.one/${GITHUB_REPOSITORY}.git" /workspace/src
         env:
           CI_TOKEN: ${{ secrets.CI_TOKEN }}
       - name: Build und Push
@@ -27,7 +27,7 @@ jobs:
       - name: Deploy ueber infra-Repo
         run: |
           TAG=$(echo "$GITHUB_SHA" | cut -c1-8)
-          git clone "http://thilo:${CI_TOKEN}@git.mke.one/thilo/infra.git" /workspace/infra
+          git clone "https://thilo:${CI_TOKEN}@git.mke.one/thilo/infra.git" /workspace/infra
           cd /workspace/infra
           sed -i "s|image: git.mke.one/thilo/triumvirat:.*|image: git.mke.one/thilo/triumvirat:$TAG|" manifests/triumvirat/deployment.yaml
           git config user.name "Forgejo Actions"
