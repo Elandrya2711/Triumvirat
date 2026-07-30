@@ -4,6 +4,13 @@
 
 const socket = io();
 
+function trackGameEvent(name, mode, playerCount) {
+  window.umami?.track(name, {
+    mode,
+    player_count: playerCount
+  });
+}
+
 // State
 let gameId = null;
 let myPlayerIndex = -1;
@@ -882,6 +889,7 @@ registerSocketEvent('game-created', (data) => {
   adjacency = data.adjacency;
   colors = data.colors;
   playerNames = data.playerNames;
+  trackGameEvent('game_created', data.vsAI ? 'ai' : 'online', data.numPlayers);
   
   document.getElementById('invite-code').textContent = gameId;
   document.getElementById('game-id-display').textContent = `#${gameId}`;
@@ -902,6 +910,7 @@ registerSocketEvent('game-joined', (data) => {
   adjacency = data.adjacency;
   colors = data.colors;
   playerNames = data.playerNames;
+  trackGameEvent('game_joined', 'online', data.numPlayers);
   
   document.getElementById('invite-code').textContent = gameId;
   document.getElementById('game-id-display').textContent = `#${gameId}`;
@@ -928,6 +937,7 @@ registerSocketEvent('game-start', (data) => {
   updateStatus(gameState.currentPlayer === myPlayerIndex ? 'Wähle eine Kugel aus!' : 'Warte auf den Gegner...');
   document.getElementById('surrender-btn').textContent = myPlayerIndex === -1 ? '🚪 Verlassen' : '🏳️ Aufgeben';
   saveSession();
+  trackGameEvent('game_started', 'online', numPlayers);
 });
 
 registerSocketEvent('valid-moves', (data) => {
@@ -1078,6 +1088,7 @@ registerSocketEvent('game-over', (data) => {
   overlay.classList.remove('hidden');
   localStorage.removeItem('triumvirat-session');
   reconnectToken = null;
+  trackGameEvent('game_completed', 'online', numPlayers);
   // Issue #12: Clear trails after game over
   setTimeout(() => { moveTrails = {}; }, 3000);
   // Show rematch button for online games
@@ -1289,6 +1300,8 @@ function startSoloGame(playerName, numP, difficulty) {
   resizeCanvas();
   updateTurnDisplay();
   document.getElementById('surrender-btn').textContent = '🏳️ Aufgeben';
+  trackGameEvent('game_created', 'ai', numP);
+  trackGameEvent('game_started', 'ai', numP);
   
   // If AI starts first, trigger AI move; otherwise prompt human
   const starterAI = soloAIConfig.find(a => a.playerIndex === soloGame.currentPlayer);
@@ -1367,6 +1380,8 @@ function startSoloSpectate(numP, difficulty) {
   resizeCanvas();
   updateTurnDisplay();
   updateStatus('KI vs KI — lehne dich zurück! 🍿');
+  trackGameEvent('game_created', 'spectate', numP);
+  trackGameEvent('game_started', 'spectate', numP);
   
   // Kick off first AI turn
   soloTriggerAI();
@@ -1662,6 +1677,11 @@ function soloShowGameOver() {
     winnerText.textContent = `${name} hat gewonnen!`;
   }
   overlay.classList.remove('hidden');
+  trackGameEvent(
+    'game_completed',
+    myPlayerIndex === -1 ? 'spectate' : 'ai',
+    numPlayers
+  );
   
   // Show rematch button for solo mode too (instant restart)
   const rematchBtn = document.getElementById('rematch-btn');
