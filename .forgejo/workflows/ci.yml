@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+env:
+  REGISTRY_IMAGE: git.mke.one/images/triumvirat
 jobs:
   build-deploy:
     runs-on: docker
@@ -12,26 +14,32 @@ jobs:
       - name: Checkout
         run: |
           apk add --no-cache git >/dev/null
-          git clone --depth 1 -b "$GITHUB_REF_NAME" "https://thilo:${CI_TOKEN}@git.mke.one/${GITHUB_REPOSITORY}.git" /workspace/src
+          git clone --depth 1 -b "$GITHUB_REF_NAME" "https://mke-ci:${MKE_CI_TOKEN}@git.mke.one/${GITHUB_REPOSITORY}.git" /workspace/src
         env:
-          CI_TOKEN: ${{ secrets.CI_TOKEN }}
+          MKE_CI_TOKEN: ${{ secrets.MKE_CI_TOKEN }}
       - name: Build und Push
         run: |
           TAG=$(echo "$GITHUB_SHA" | cut -c1-8)
-          echo "$CI_TOKEN" | docker login git.mke.one -u thilo --password-stdin
-          docker build -t "git.mke.one/thilo/triumvirat:$TAG" /workspace/src
-          docker push "git.mke.one/thilo/triumvirat:$TAG"
-          docker rmi "git.mke.one/thilo/triumvirat:$TAG" || true
+          IMAGE="$REGISTRY_IMAGE:$TAG"
+          case "$IMAGE" in
+            git.mke.one/images/triumvirat:*) ;;
+            *) echo "ungueltiges Registry-Ziel: $IMAGE" >&2; exit 1 ;;
+          esac
+          echo "$MKE_CI_TOKEN" | docker login git.mke.one -u mke-ci --password-stdin
+          docker build -t "$IMAGE" /workspace/src
+          docker push "$IMAGE"
+          docker rmi "$IMAGE" || true
         env:
-          CI_TOKEN: ${{ secrets.CI_TOKEN }}
+          MKE_CI_TOKEN: ${{ secrets.MKE_CI_TOKEN }}
       - name: Deploy ueber infra-Repo
         run: |
           TAG=$(echo "$GITHUB_SHA" | cut -c1-8)
-          git clone "https://thilo:${CI_TOKEN}@git.mke.one/thilo/infra.git" /workspace/infra
+          IMAGE="$REGISTRY_IMAGE:$TAG"
+          git clone "https://mke-ci:${MKE_CI_TOKEN}@git.mke.one/thilo/infra.git" /workspace/infra
           cd /workspace/infra
-          sed -i "s|image: git.mke.one/thilo/triumvirat:.*|image: git.mke.one/thilo/triumvirat:$TAG|" manifests/triumvirat/deployment.yaml
+          sed -i "s|image: git.mke.one/images/triumvirat:.*|image: $IMAGE|" manifests/triumvirat/deployment.yaml
           git config user.name "Forgejo Actions"
           git config user.email "ci@mke.one"
           git commit -am "triumvirat: Deploy $TAG" && git push || echo "keine Manifest-Aenderung"
         env:
-          CI_TOKEN: ${{ secrets.CI_TOKEN }}
+          MKE_CI_TOKEN: ${{ secrets.MKE_CI_TOKEN }}
