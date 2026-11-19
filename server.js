@@ -48,6 +48,32 @@ const io = new Server(server, {
   }
 });
 
+// Security headers for every response. The CSP matches what the pages load:
+// own scripts and workers, Google Fonts (style.css), inline style attributes,
+// data: images, and the Socket.io connection on the same host.
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "worker-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  "img-src 'self' data:",
+  "connect-src 'self' ws: wss:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'"
+].join('; ');
+
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Serve shared modules for browser (isomorphic game-logic + ai-player)
